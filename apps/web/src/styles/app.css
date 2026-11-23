@@ -1,0 +1,60 @@
+/* Rules added for the production app. The approved design lives in prototype.css (lifted
+   unchanged); nothing here restyles it. These rules only: point the font stacks at the
+   self-hosted files, give <a>/<img> the styles the prototype gave <button>/<svg>, and lay out
+   the few things the prototype had no design for (sign-in sheet, beta tag, empty states). */
+
+/* Self-hosted fonts (fontsource) first, same fallbacks as the prototype. */
+:root{--disp:"Bricolage Grotesque Variable","Bricolage Grotesque","Instrument Sans Variable","Instrument Sans",system-ui,sans-serif;
+--body:"Instrument Sans Variable","Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif}
+
+/* Covers are static <img> files instead of inline <svg>. */
+.cover img{position:absolute;inset:0;width:100%;height:100%;display:block;object-fit:cover}
+#ov .bg img{width:100%;height:100%;display:block;object-fit:cover}
+
+/* Real links with the prototype's button styles. */
+a.mark{color:inherit;text-decoration:none}
+.nav a{padding:9px 14px;border-radius:999px;color:var(--soft);font-weight:600;font-size:14.5px;text-decoration:none;white-space:nowrap}
+.nav a:hover{color:var(--ink)}.nav a.on{background:var(--surf2);color:var(--ink)}
+a.mechip{color:inherit;text-decoration:none}
+a.btn{text-decoration:none}
+.seg a{padding:9px 16px;border-radius:10px;color:var(--soft);font-weight:600;font-size:14px;text-decoration:none}
+.seg a.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(12,15,38,.12)}
+.sbtn:disabled,.btn:disabled{cursor:default}
+.btn:disabled{opacity:.6}
+
+/* Ticker with nothing to scroll. */
+.tick div.quiet{animation:none;color:var(--dim)}
+
+/* Empty rows, in the list styles they sit in. */
+.top3 li.none{color:var(--dim)}
+td.none{color:var(--dim);text-align:center}
+
+/* Beta tag next to the leaderboard heading. */
+h1 .tag{vertical-align:middle;margin-left:12px;font-family:var(--body);letter-spacing:0;position:relative;top:-.35em}
+
+/* Sign-in and age-gate sheets: the welcome sheet's box with the profile's fields. */
+#signin .sheet{padding:30px;max-width:480px}
+#signin h3{font-family:var(--disp);font-size:30px;letter-spacing:-.03em;margin:0 0 8px}
+#signin .sub{color:var(--soft);margin:0 0 18px}
+#signin .field{margin:8px 0 16px}
+#signin .btn{width:100%;justify-content:center;margin-top:8px}
+#signin .agree{display:flex;align-items:center;gap:10px;margin:4px 0 12px;font-weight:600;font-size:14.5px;cursor:pointer}
+#signin .agree input{width:18px;height:18px;accent-color:var(--ink);flex:none}
+#signin .fine{color:var(--dim);font-size:13px;margin:14px 0 0}
+
+/* Duels: a waiting duel uses the history row. */
+.dh .wt{background:var(--surf2);color:var(--dim)}
+.vs .ph{width:61px;height:61px;border-radius:34%;background:var(--surf2);display:grid;place-items:center;font:800 22px var(--disp);color:var(--dim)}
+
+/* Profile: account line under the stats. */
+.acct{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0}
+.acct span{color:var(--dim);font-size:13.5px;margin-top:16px}
+
+/* In-game: the stage is its own page, so the scrim is always on; loading text reuses .ghint. */
+#ov .lnk{color:#c3c8ea}
+#ov .lnk:disabled{opacity:.5}
+
+@media(max-width:640px){
+  /* The prototype's nav scrolls sideways on phones; keep the scrollbar out of the way. */
+  .nav{scrollbar-width:none}.nav::-webkit-scrollbar{display:none}
+}

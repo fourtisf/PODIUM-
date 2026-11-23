@@ -105,3 +105,6 @@ export const LIMITS = {
   idempotencyKeepDays: 7,
   staleRunDays: 3,
 } as const;
+
+/** Interactive transaction limits (the replay itself runs outside the transaction). */
+export const TX = { maxWait: 10_000, timeout: 20_000 } as const;

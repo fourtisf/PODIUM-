@@ -2,6 +2,7 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 import type { Redis } from 'ioredis';
 import type { Config } from './config';
+import type { StreamService } from './services/stream';
 
 export interface Clock {
   now(): Date;
@@ -27,11 +28,10 @@ export interface Ctx {
   seed(): number;
   /** Sign-in codes that were logged instead of emailed (non-production without SMTP). Read by tests. */
   devCodes: Map<string, string>;
+  stream: StreamService;
 }
 
 export type Tx = Prisma.TransactionClient;
 
 /** Work to do once the transaction has committed (cache and sorted-set updates). */
 export type After = () => Promise<void>;
-
-export const TX_OPTS = { maxWait: 10_000, timeout: 20_000 } as const;
