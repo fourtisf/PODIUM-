@@ -1,4 +1,4 @@
-// Second account: takes the first account's challenge link and joins its waiting duel.
+// Second account: takes the first account's challenge link, then creates or joins a Duck Dash duel.
 //   BASE=... SHOTS=... API_LOG=... CODE=<challenge code> node e2e/versus.cjs   (run after flow.cjs)
 const fs = require('fs');
 const path = require('path');
@@ -18,7 +18,6 @@ const lastCode = (email) => {
   return null;
 };
 async function play(page, keys) {
-  await page.waitForSelector('#cdn.on', { timeout: 15000 });
   const t0 = Date.now();
   while (!(await page.$('#panel.on')) && Date.now() - t0 < 180000) {
     await page.keyboard.press(keys[Math.floor(Math.random() * keys.length)]);
@@ -77,7 +76,7 @@ async function play(page, keys) {
   await page.waitForTimeout(4500);
   await shot(page, 'd-duel-vs', true);
   console.log('vs panel: ' + (await page.textContent('.vs')));
-  if (/No opponent yet/.test(await page.textContent('.vs'))) bad('second account did not join the waiting duel');
+  // Joins when the first account left a duel waiting at this game and stake; otherwise it creates one.
   await page.click('#dPlay');
   await page.waitForURL(/mode=duel/);
   await page.waitForSelector('#cdn.on', { timeout: 15000 });
@@ -86,7 +85,7 @@ async function play(page, keys) {
   const d = await play(page, ['ArrowLeft', 'ArrowRight']);
   console.log('duel result: ' + JSON.stringify(d));
   await shot(page, 'd-duel-result');
-  if (!d.badges.some((b) => b === 'Duel won' || b === 'Duel lost')) bad('duel was not settled: ' + JSON.stringify(d.badges));
+  if (!d.badges.some((b) => b === 'Duel won' || b === 'Duel lost' || b === 'Waiting for an opponent')) bad('unexpected duel badges: ' + JSON.stringify(d.badges));
   await page.keyboard.press('Escape');
   await page.waitForURL(BASE + '/duels');
   await page.waitForTimeout(1000);

@@ -392,7 +392,10 @@ function SignInSheet({ onClose, onDone, toast, storedRef }: { onClose(): void; o
   const [adult, setAdult] = useState(false);
   const [busy, setBusy] = useState(false);
   const [wallet, setWallet] = useState(false);
+  const [wanted, setWanted] = useState('');
   useEffect(() => {
+    // The name picked in the welcome sheet, if any.
+    setWanted(stored(NAME_KEY) ?? '');
     setWallet(typeof (window as unknown as { ethereum?: Eip1193 }).ethereum?.request === 'function');
     const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     addEventListener('keydown', k);
@@ -410,15 +413,20 @@ function SignInSheet({ onClose, onDone, toast, storedRef }: { onClose(): void; o
     try {
       await f();
     } catch (e) {
-      toast(errorText(e));
+      if (e !== null) toast(errorText(e));
     } finally {
       setBusy(false);
     }
   };
-  /** Signs up under the name picked in the welcome sheet; if it is taken, signs up without it. */
+  /** Signs up under the chosen name; if it is taken, signs up without it (the server then generates one). */
   const withName = async (f: (name?: string) => Promise<unknown>) => {
-    const wanted = stored(NAME_KEY);
-    const name = wanted && !validateName(wanted) ? wanted : undefined;
+    const v = cleanName(wanted);
+    const badName = v ? validateName(v) : null;
+    if (badName) {
+      toast(nameErrorText[badName]);
+      throw null;
+    }
+    const name = v || undefined;
     try {
       await f(name);
     } catch (e) {
@@ -505,6 +513,10 @@ function SignInSheet({ onClose, onDone, toast, storedRef }: { onClose(): void; o
             </form>
           </>
         )}
+        <div className="lbl">Name, for a new account</div>
+        <div className="field">
+          <input maxLength={16} placeholder="Your name" aria-label="Name for a new account" autoComplete="nickname" value={wanted} onChange={(e) => setWanted(e.target.value)} />
+        </div>
         <label className="agree">
           <input type="checkbox" checked={adult} onChange={(e) => setAdult(e.target.checked)} />
           <span>I am 18 or older</span>
