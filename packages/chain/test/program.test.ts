@@ -43,7 +43,11 @@ if (!PROGRAM_BUILT) console.warn(`\n${BUILD_HINT}\n`);
 const UNIT = DEFAULT_UNIT;
 const FEE_BPS = BigInt(Math.round(ECONOMY.fee * 10_000));
 const code = (name: string) => ({ code: name });
-const DBG = { asymmetricMatch: (m: unknown) => (console.log('DBG', String(m).slice(0, 300)), true) } as unknown as RegExp;
+/** Errors raised before the program's own checks: by Anchor's account validation or the system program. */
+const ALREADY_IN_USE = { customCode: 0 }; // system program: the PDA already exists
+const SEEDS_MISMATCH = { customCode: 2006 }; // Anchor ConstraintSeeds
+const NOT_THAT_ACCOUNT_TYPE = { customCode: 3002 }; // Anchor AccountDiscriminatorMismatch
+const NOT_INITIALIZED = { customCode: 3012 }; // Anchor AccountNotInitialized
 
 describe.skipIf(!PROGRAM_BUILT)(PROGRAM_BUILT ? 'podium program' : `podium program (${BUILD_HINT})`, () => {
   let w: World;
@@ -77,7 +81,7 @@ describe.skipIf(!PROGRAM_BUILT)(PROGRAM_BUILT ? 'podium program' : `podium progr
     it('cannot be initialized twice', async () => {
       const other = Keypair.generate();
       w.svm.airdrop(other.publicKey, 10_000_000_000n);
-      await expect(w.send([w.initializeIx({ admin: other.publicKey, operator: other.publicKey })], [other])).rejects.toThrow(DBG);
+      await expect(w.send([w.initializeIx({ admin: other.publicKey, operator: other.publicKey })], [other])).rejects.toMatchObject(ALREADY_IN_USE);
       expect(w.config().admin.equals(w.admin.publicKey)).toBe(true);
     });
 
@@ -153,7 +157,7 @@ describe.skipIf(!PROGRAM_BUILT)(PROGRAM_BUILT ? 'podium program' : `podium progr
       expect(await w.op.registerPlayer(wallet)).toBeNull();
       w.wallets.push(wallet);
       expect(w.playerAcc(wallet)).toMatchObject({ available: 0n, locked: 0n, unlockAt: 0n, frozen: false });
-      await expect(w.send([buildRegisterPlayerIx(w.admin.publicKey, wallet, w.programId)], [w.admin])).rejects.toThrow(DBG);
+      await expect(w.send([buildRegisterPlayerIx(w.admin.publicKey, wallet, w.programId)], [w.admin])).rejects.toMatchObject(ALREADY_IN_USE);
     });
 
     it('withdraw without the operator co-signature fails', async () => {
@@ -175,7 +179,7 @@ describe.skipIf(!PROGRAM_BUILT)(PROGRAM_BUILT ? 'podium program' : `podium progr
       tx.recentBlockhash = w.svm.latestBlockhash();
       tx.add(buildWithdrawIx(p.wallet, w.operatorKp.publicKey, p.ata, chips(100), w.programId));
       tx.partialSign(p.kp);
-      await expect(w.conn.sendRawTransaction(tx.serialize({ requireAllSignatures: false }))).rejects.toThrow(DBG);
+      await expect(w.conn.sendRawTransaction(tx.serialize({ requireAllSignatures: false }))).rejects.toThrow(/Missing signature/);
       expect(w.playerAcc(p.wallet).available).toBe(chips(500));
     });
 
@@ -185,7 +189,7 @@ describe.skipIf(!PROGRAM_BUILT)(PROGRAM_BUILT ? 'podium program' : `podium progr
       // Operator signs alone in the wallet slot: it is not the player's wallet.
       await expect(
         w.send([buildWithdrawIx(w.operatorKp.publicKey, w.operatorKp.publicKey, thief.ata, chips(100), w.programId)], [w.operatorKp]),
-      ).rejects.toThrow(DBG);
+      ).rejects.toMatchObject(NOT_INITIALIZED);
       // Player and operator both sign, but the destination belongs to someone else.
       await expect(
         w.send([buildWithdrawIx(p.wallet, w.operatorKp.publicKey, thief.ata, chips(100), w.programId)], [p.kp, w.operatorKp]),
@@ -193,7 +197,7 @@ describe.skipIf(!PROGRAM_BUILT)(PROGRAM_BUILT ? 'podium program' : `podium progr
       // Someone else's Player account cannot be drained by another wallet.
       const ix = buildWithdrawIx(thief.wallet, w.operatorKp.publicKey, thief.ata, chips(100), w.programId);
       ix.keys[3]!.pubkey = playerPda(p.wallet, w.programId);
-      await expect(w.send([ix], [thief.kp, w.operatorKp])).rejects.toThrow(DBG);
+      await expect(w.send([ix], [thief.kp, w.operatorKp])).rejects.toMatchObject(SEEDS_MISMATCH);
       expect(w.playerAcc(p.wallet).available).toBe(chips(500));
       expect(w.tokenBalance(thief.ata)).toBe(0n);
     });
@@ -234,7 +238,7 @@ describe.skipIf(!PROGRAM_BUILT)(PROGRAM_BUILT ? 'podium program' : `podium progr
       const dep = buildDepositTx({ wallet: other.wallet, mint: w.mint, amount: chips(10), recentBlockhash: w.svm.latestBlockhash(), programId: w.programId });
       dep.instructions[0]!.keys[2]!.pubkey = playerPda(p.wallet, w.programId);
       dep.sign(other.kp);
-      await expect(w.conn.sendRawTransaction(dep.serialize())).rejects.toThrow(DBG);
+      await expect(w.conn.sendRawTransaction(dep.serialize())).rejects.toThrow(/Custom\(2006\)/);
       expect(w.playerAcc(p.wallet).available).toBe(chips(100));
     });
   });
@@ -257,7 +261,7 @@ describe.skipIf(!PROGRAM_BUILT)(PROGRAM_BUILT ? 'podium program' : `podium progr
         { seq: await w.next(), kind: 0, game: 'hopper', periodStart: start, periodEnd: start + WEEK, entry: chips(1), splitBps: [10_000], winners: 1 },
         w.programId,
       );
-      await expect(w.send([again], [w.operatorKp])).rejects.toThrow(DBG);
+      await expect(w.send([again], [w.operatorKp])).rejects.toMatchObject(ALREADY_IN_USE);
       expect(w.pool(address).entry).toBe(chips(100));
     });
 
@@ -365,7 +369,7 @@ describe.skipIf(!PROGRAM_BUILT)(PROGRAM_BUILT ? 'podium program' : `podium progr
       // An account that is not a Player (the pool itself) cannot be paid.
       const bad = buildClosePoolIx(w.operatorKp.publicKey, await w.next(), pool, [players[0]!.wallet], [chips(1)], w.programId);
       bad.keys[3]!.pubkey = pool;
-      await expect(w.send([bad], [w.operatorKp])).rejects.toThrow(DBG);
+      await expect(w.send([bad], [w.operatorKp])).rejects.toMatchObject(NOT_THAT_ACCOUNT_TYPE);
       expect(w.pool(pool).closed).toBe(false);
       expect(w.config().treasuryBalance).toBe(0n);
     });

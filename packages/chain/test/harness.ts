@@ -49,7 +49,7 @@ export const SO_PATH = resolve(DEPLOY_DIR, 'podium.so');
 export const PROGRAM_BUILT = existsSync(SO_PATH);
 export const BUILD_HINT =
   `Podium program tests SKIPPED: ${SO_PATH} is missing. Build it with ` +
-  '`pnpm --filter @podium/chain build:program` (needs the Agave CLI, see packages/chain/README.md).';
+  '`pnpm --filter @podium/chain build:program` (needs the Agave CLI, see the header of packages/chain/scripts/build-program.sh).';
 
 /** The id the .so was built with (the build script writes it next to the .so). */
 export function builtProgramId(): PublicKey {

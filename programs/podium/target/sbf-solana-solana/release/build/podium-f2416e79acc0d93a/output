@@ -1,2 +1,0 @@
-cargo:rerun-if-env-changed=PODIUM_PROGRAM_ID
-cargo:rerun-if-changed=build.rs

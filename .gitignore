@@ -8,3 +8,10 @@ dist
 coverage
 .turbo
 *.tsbuildinfo
+
+# Solana program build output and local validator data
+programs/**/target/
+target/
+.anchor/
+test-ledger/
+*-keypair.json

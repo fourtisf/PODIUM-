@@ -55,6 +55,8 @@ export function findCustomCode(err: unknown, logs: readonly string[] = []): numb
   text += ' ' + logs.join('\n');
   const json = /"Custom"\s*:\s*(\d+)/.exec(text);
   if (json) return Number(json[1]);
+  const debug = /Custom\((\d+)\)/.exec(text);
+  if (debug) return Number(debug[1]);
   const hex = /custom program error: 0x([0-9a-fA-F]+)/.exec(text);
   if (hex) return parseInt(hex[1]!, 16);
   const anchor = /Error Number: (\d+)/.exec(text);
