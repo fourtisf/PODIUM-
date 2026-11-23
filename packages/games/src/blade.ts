@@ -22,8 +22,8 @@ export const blade: GameDef<BladeState> = {
   // A kill is worth 1 + floor(combo / 6) and the combo has no cap, so score grows with the square of the kills.
   // Kills are limited by spawns (at least 0.7 * max(0.32, 1 - 0.013 t) s apart) and no run can pass t = 1822 s
   // (enemy speed 95 + 4 t then steps over the 24..125 px kill window in one frame). The worst case over that
-  // whole span is 2921 points per second; a constant bound cannot be tighter for long runs.
-  maxScorePerSecond: 3000,
+  // whole span (every spawn killed at once, 60 Hz) is 2731 points per second; a constant bound cannot be tighter.
+  maxScorePerSecond: 2750,
   scoreSlack: 0,
 
   init: (seed) => ({ score: 0, t: 0, seed, fx: [], en: [], sp: 0.7, cd: 0, sl: null, combo: 0 }),
