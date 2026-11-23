@@ -6,6 +6,9 @@ import websocket from '@fastify/websocket';
 import type { PrismaClient } from '@prisma/client';
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
+import type { ChainRpc } from './chain/rpc';
+import { syncRewardsPot } from './chain/outbox';
+import { ChainService } from './chain/service';
 import { LIMITS, loadConfig, type Config } from './config';
 import type { Clock, Ctx, HttpFetch } from './ctx';
 import { AppError } from './errors';
@@ -15,6 +18,7 @@ import { registerRateLimits } from './plugins/ratelimit';
 import { createRedis } from './plugins/redis';
 import { registerSessions } from './plugins/session';
 import authRoutes from './routes/auth';
+import chainRoutes from './routes/chain';
 import challengeRoutes from './routes/challenges';
 import duelRoutes from './routes/duels';
 import gameRoutes from './routes/games';
@@ -36,6 +40,8 @@ export interface AppOptions {
   db?: PrismaClient;
   redis?: Redis;
   logger?: boolean;
+  /** RPC to use in chain mode instead of connecting to the cluster (tests pass an in-process chain). */
+  chainRpc?: ChainRpc;
 }
 
 export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> {
@@ -55,14 +61,36 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
     seed: opts.seed ?? (() => randomInt(1, 2 ** 31 - 1)),
     devCodes: new Map(),
     stream: undefined as unknown as StreamService,
+    chain: null,
   };
   ctx.stream = new StreamService(ctx);
   ctx.stream.endRun = (runId, how, snap) => endRunFromStream(ctx, runId, how, snap);
   app.decorate('ctx', ctx);
+  if (cfg.chain.mode !== 'off') {
+    // Refuses mainnet (by name, by URL and by genesis hash) and a half-configured chain: the
+    // server does not start in either case.
+    try {
+      ctx.chain = await ChainService.create(cfg.chain, app.log, opts.chainRpc);
+      // Balances from before chain mode (the free starting tChips) have nothing behind them on-chain.
+      const [ops, deposits, held] = await Promise.all([db.chainOp.count(), db.ledger.count({ where: { reason: 'deposit' } }), db.user.aggregate({ _sum: { balance: true } })]);
+      if (ops === 0 && deposits === 0 && (held._sum.balance ?? 0) > 0) {
+        throw new Error('CHAIN_MODE is on, but this database holds tChips balances that are not backed on-chain. Start chain mode on a fresh database (deploy/phase3-devnet.md).');
+      }
+      await syncRewardsPot(ctx);
+    } catch (e) {
+      if (!opts.db) await db.$disconnect();
+      if (!opts.redis) redis.disconnect();
+      throw e;
+    }
+  }
 
   app.setErrorHandler((err: FastifyError | AppError, req, reply) => {
     if (err instanceof AppError) {
       if (err.code === 'rate_limited' && err.details?.retryAfter) void reply.header('retry-after', String(err.details.retryAfter));
+      // There is no refill in chain mode, so the standard text would point at something that is not there.
+      if (ctx.chain && err.code === 'not_enough_chips' && err.message.includes('Refill')) {
+        return reply.code(err.status).send(new AppError(err.status, err.code, 'Not enough tChips. Deposit test tokens from the Wallet.').body());
+      }
       return reply.code(err.status).send(err.body());
     }
     const status = typeof err.statusCode === 'number' && err.statusCode >= 400 && err.statusCode < 500 ? err.statusCode : 500;
@@ -89,6 +117,7 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
       await api.register(challengeRoutes);
       await api.register(rewardRoutes);
       await api.register(notificationRoutes);
+      await api.register(chainRoutes);
     },
     { prefix: '/api' },
   );

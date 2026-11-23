@@ -48,6 +48,11 @@ model User {
   deviceHash      String?
   lastIp          String?
 
+  // Phase 3 (devnet test token)
+  chainHold       Boolean @default(false) // an on-chain operation of this player was rejected: withdrawals wait for review
+
+  chainOps      ChainOp[]
+  withdrawals   Withdrawal[]
   items         Item[]
   runs          Run[]
   ledger        Ledger[]
@@ -77,7 +82,7 @@ model Ledger {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   amount    Int // positive in, negative out
-  reason    String // "entry" | "payout" | "duel" | "duel_refund" | "mission" | "streak" | "season" | "box" | "shop" | "refill" | "referral"
+  reason    String // "entry" | "payout" | "duel" | "duel_refund" | "mission" | "streak" | "season" | "box" | "shop" | "refill" | "referral" | "deposit" | "withdraw" | "withdraw_refund"
   ref       String? // run id, period id, item key
   idemKey   String   @unique // makes a replayed request a no-op
 
@@ -249,4 +254,42 @@ model Activity {
 model Counter {
   key   String @id
   value Int    @default(0)
+}
+
+// Phase 3 (devnet test token). Outbox of ledger movements to mirror on-chain, written in the same
+// transaction as the Ledger row. One worker applies them strictly in id order.
+model ChainOp {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+  kind      String // "createPool" | "enterPool" | "closePool" | "duelOpen" | "duelJoin" | "duelSettle" | "duelRefund" | "spend" | "creditReward" | "setFrozen"
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  payload   Json
+  status    String   @default("pending") // "pending" | "sent" | "applied" | "failed"
+  seq       BigInt? // the operator sequence number, stored before the transaction is sent
+  signature String?
+  error     String?
+  ref       String   @unique // deterministic (e.g. the ledger idemKey): an operation is enqueued at most once
+  attempts  Int      @default(0)
+
+  @@index([status, id])
+  @@index([userId, status])
+}
+
+// Phase 3 (devnet test token). A withdrawal is reserved in the Ledger when prepared, and the
+// reservation is reversed exactly once if the transaction fails or its blockhash expires.
+model Withdrawal {
+  id                   String   @id @default(cuid())
+  createdAt            DateTime @default(now())
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet               String
+  amount               Int // whole tChips
+  status               String   @default("prepared") // "prepared" | "submitted" | "confirmed" | "expired" | "failed"
+  blockhash            String
+  lastValidBlockHeight Int
+  signature            String? // the player's signature = the transaction id, stored before the server co-signs
+
+  @@index([userId, status])
+  @@index([status])
 }

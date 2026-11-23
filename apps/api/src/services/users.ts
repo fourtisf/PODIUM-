@@ -7,7 +7,9 @@ import type { User } from '@prisma/client';
 import type { Ctx, Tx } from '../ctx';
 import { AppError, conflict, invalid } from '../errors';
 import { digits, shortCode } from '../util';
-import { applyLedger } from './ledger';
+import { enqueueOp } from '../chain/outbox';
+import { isUniqueViolation } from '../util';
+import { lockUser, payReward } from './ledger';
 import { notify } from './notifications';
 
 export type Identity = { email: string } | { googleId: string; email?: string } | { wallet: string };
@@ -41,13 +43,26 @@ export interface Origin {
   ip: string | null;
 }
 
+/** The free starting balance exists only while tChips are plain test chips; in chain mode every balance is deposited or earned. */
+export const startBalance = (ctx: Ctx): number => (ctx.chain ? 0 : ECONOMY.startBalance);
+
+/**
+ * The invited player's welcome bonus, paid once. In chain mode it is a reward from the on-chain
+ * pot and needs a wallet, so it waits until one is linked.
+ */
+export async function payInvitedBonus(ctx: Ctx, tx: Tx, user: User, now: Date): Promise<void> {
+  if (!user.referredById || (ctx.chain && !user.wallet)) return;
+  const paid = await payReward(ctx, tx, { userId: user.id, amount: REFERRAL.invitedBonus, reason: 'referral', idemKey: `referral:invited:${user.id}`, ref: user.referredById, at: now });
+  if (paid > 0) await notify(tx, user.id, 'referral', `Welcome bonus: <b>+${paid} tChips</b> for joining through an invite.`, now);
+}
+
 export async function createGuest(ctx: Ctx, o: Origin): Promise<User> {
   return ctx.db.$transaction(async (tx) => {
     const name = await freeName(tx, 'Guest');
     return tx.user.create({
       data: {
         guest: true, name, nameLower: name.toLowerCase(), refCode: await freeRefCode(tx), createdAt: ctx.clock.now(),
-        balance: ECONOMY.startBalance, boxes: ECONOMY.startBoxes, freePractice: ECONOMY.freePracticeRuns,
+        balance: startBalance(ctx), boxes: ECONOMY.startBoxes, freePractice: ECONOMY.freePracticeRuns,
         deviceHash: o.deviceHash, lastIp: o.ip,
       },
     });
@@ -96,7 +111,13 @@ export async function signIn(ctx: Ctx, id: Identity, o: SignInOpts): Promise<{ u
     if ('googleId' in id && id.email && (await tx.user.findUnique({ where: { email: id.email } }))) delete (idData as { email?: string }).email;
 
     if (o.current && !o.current.guest) {
+      // In chain mode the wallet holds the player's tChips on-chain, so it can never be swapped for another.
+      if (ctx.chain && 'wallet' in id && o.current.wallet && o.current.wallet !== id.wallet) throw conflict('This account already has a wallet linked.');
       const user = await tx.user.update({ where: { id: o.current.id }, data: { ...idData, ...(o.adult ? { adult: true } : {}) } });
+      if (ctx.chain) {
+        await payInvitedBonus(ctx, tx, user, now);
+        return { user: await tx.user.findUniqueOrThrow({ where: { id: user.id } }), created: false };
+      }
       return { user, created: false };
     }
     if (o.requireAdult && !o.adult) throw new AppError(403, 'not_adult', 'You must confirm you are 18 or over to create an account.');
@@ -107,7 +128,7 @@ export async function signIn(ctx: Ctx, id: Identity, o: SignInOpts): Promise<{ u
       : await tx.user.create({
           data: {
             ...base, refCode: await freeRefCode(tx), createdAt: now,
-            balance: ECONOMY.startBalance, boxes: ECONOMY.startBoxes, freePractice: ECONOMY.freePracticeRuns,
+            balance: startBalance(ctx), boxes: ECONOMY.startBoxes, freePractice: ECONOMY.freePracticeRuns,
           },
         });
 
@@ -116,12 +137,43 @@ export async function signIn(ctx: Ctx, id: Identity, o: SignInOpts): Promise<{ u
       const inviter = await tx.user.findUnique({ where: { refCode: o.ref.toUpperCase() } });
       const sameDevice = !!inviter?.deviceHash && inviter.deviceHash === user.deviceHash; // inviting yourself from one device
       if (inviter && inviter.id !== user.id && !inviter.guest && !sameDevice) {
-        await applyLedger(tx, { userId: user.id, amount: REFERRAL.invitedBonus, reason: 'referral', idemKey: `referral:invited:${user.id}`, ref: inviter.id, at: now });
         user = await tx.user.update({ where: { id: user.id }, data: { referredById: inviter.id } });
-        await notify(tx, user.id, 'referral', `Welcome bonus: <b>+${REFERRAL.invitedBonus} tChips</b> for joining through an invite.`, now);
+        await payInvitedBonus(ctx, tx, user, now);
+        user = await tx.user.findUniqueOrThrow({ where: { id: user.id } });
       }
     }
     return { user, created: true };
+  });
+}
+
+/** Links a proven wallet to a signed-in account. 409 when either side is already taken. */
+export async function linkWallet(ctx: Ctx, userId: string, wallet: string): Promise<User> {
+  const now = ctx.clock.now();
+  try {
+    return await ctx.db.$transaction(async (tx) => {
+      await lockUser(tx, userId);
+      const me = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+      if (me.wallet === wallet) return me;
+      if (me.wallet) throw conflict('This account already has a wallet linked.');
+      if (await tx.user.findUnique({ where: { wallet } })) throw conflict('That wallet belongs to another account.');
+      const u = await tx.user.update({ where: { id: userId }, data: { wallet } });
+      await payInvitedBonus(ctx, tx, u, now);
+      return tx.user.findUniqueOrThrow({ where: { id: userId } });
+    });
+  } catch (e) {
+    if (isUniqueViolation(e)) throw conflict('That wallet belongs to another account.');
+    throw e;
+  }
+}
+
+/**
+ * Puts an account under review, or clears it. In chain mode the wallet is frozen on-chain as
+ * well (set_frozen), which blocks withdrawals there too.
+ */
+export async function setFlagged(ctx: Ctx, userId: string, flagged: boolean): Promise<void> {
+  await ctx.db.$transaction(async (tx) => {
+    const u = await tx.user.update({ where: { id: userId }, data: { flagged } });
+    if (u.wallet) await enqueueOp(ctx, tx, 'setFrozen', `frozen:${userId}:${+ctx.clock.now()}`, { wallet: u.wallet, frozen: flagged }, userId);
   });
 }
 
@@ -179,10 +231,11 @@ export async function meView(ctx: Ctx, u: User, csrf: string): Promise<MeRespons
     season: SEASON.map((t, tier) => ({ tier, xp: t.xp, reward: t.reward, claimed: claimed.has(tier), ready: !claimed.has(tier) && u.xp >= t.xp })),
     unread,
     csrf,
-    canRefill: u.balance < ECONOMY.refillUnder,
+    canRefill: !ctx.chain && u.balance < ECONOMY.refillUnder,
     rewardsUnlocked: rewardsUnlocked(u),
     validatedRuns: u.validatedRanked,
     validatedRunsNeeded: ANTI_ABUSE.minValidatedRuns,
     serverTime: now.toISOString(),
+    chain: ctx.chain ? { mode: ctx.chain.mode, wallet: u.wallet, needsWallet: !u.guest && !u.wallet } : null,
   };
 }

@@ -1,6 +1,7 @@
 // What every service needs. Built once in app.ts and passed around instead of globals.
 import type { Prisma, PrismaClient } from '@prisma/client';
 import type { Redis } from 'ioredis';
+import type { ChainService } from './chain/service';
 import type { Config } from './config';
 import type { StreamService } from './services/stream';
 
@@ -29,6 +30,8 @@ export interface Ctx {
   /** Sign-in codes that were logged instead of emailed (non-production without SMTP). Read by tests. */
   devCodes: Map<string, string>;
   stream: StreamService;
+  /** Phase 3 (devnet / localnet test token). null while CHAIN_MODE is off. */
+  chain: ChainService | null;
 }
 
 export type Tx = Prisma.TransactionClient;

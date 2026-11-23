@@ -1,6 +1,7 @@
 // Weekly close: pays the split of every board and Cup whose period has ended, records the fee and
 // opens the next period. Idempotent (closed flag + payout idemKeys) and guarded by a Redis lock.
 import { BRAND, GAME_KEYS, WEEKLY_WINNERS, XP, fmt, gameMeta, splitPool, type GameKey } from '@podium/shared';
+import { enqueueOp, poolKind, type OpPayloads } from '../chain/outbox';
 import { LIMITS, TX } from '../config';
 import type { Ctx } from '../ctx';
 import { token } from '../util';
@@ -26,7 +27,7 @@ async function closeOne(ctx: Ctx, periodId: string, now: Date): Promise<CloseRep
       FROM (SELECT id, row_number() OVER (ORDER BY score DESC, "setAt" ASC, id ASC) AS rn FROM "Score" WHERE "periodId" = ${periodId}) r
       WHERE s.id = r.id`;
     const split = splitFor(period.kind);
-    const winners = await tx.score.findMany({ where: { periodId, place: { lte: split.length } }, orderBy: { place: 'asc' }, include: { user: { select: { name: true } } } });
+    const winners = await tx.score.findMany({ where: { periodId, place: { lte: split.length } }, orderBy: { place: 'asc' }, include: { user: { select: { name: true, wallet: true } } } });
     const { payouts } = splitPool(period.pool, split, winners.length);
     // With fewer players than paid places the unclaimed shares are not paid to anyone: they go to fees.
     const totalFee = period.pool - payouts.reduce((a, b) => a + b, 0);
@@ -42,8 +43,16 @@ async function closeOne(ctx: Ctx, periodId: string, now: Date): Promise<CloseRep
       paid.push({ userId: w.userId, place: i + 1, amount });
     }
     await tx.period.update({ where: { id: period.id }, data: { closed: true, fee: totalFee } });
+    if (ctx.chain) {
+      // One close_pool pays the same winners the same amounts, in place order; the rest of the pool is the fee.
+      const onchain: OpPayloads['closePool']['winners'] = winners.map((w, i) => {
+        if (!w.user.wallet) throw new Error(`winner ${w.userId} of period ${period.id} has no wallet`);
+        return { wallet: w.user.wallet, chips: payouts[i] ?? 0, userId: w.userId };
+      });
+      await enqueueOp(ctx, tx, 'closePool', `close:${period.id}`, { kind: poolKind(period.kind), game: period.game, start: Math.floor(+period.startAt / 1000), winners: onchain });
+    }
     if (totalFee > 0) await addFee(tx, totalFee, now);
-    await ensureNext(tx, period);
+    await ensureNext(tx, period, ctx);
     return { periodId: period.id, kind: period.kind, game: period.game, pool: period.pool, fee: totalFee, payouts: paid };
   }, TX);
 }
@@ -64,8 +73,8 @@ export async function closeDuePeriods(ctx: Ctx, now: Date = ctx.clock.now()): Pr
       }
     }
     // Make sure this week's boards and Cup exist even when nobody has played yet.
-    if ((await allWeeklyPeriods(ctx.db, now)).length < GAME_KEYS.length) ctx.log.warn({}, 'some weekly periods are missing');
-    await cupPeriod(ctx.db, now);
+    if ((await allWeeklyPeriods(ctx.db, now, ctx)).length < GAME_KEYS.length) ctx.log.warn({}, 'some weekly periods are missing');
+    await cupPeriod(ctx.db, now, ctx);
     if (closed.length) await ctx.redis.del('cache:games');
     return { ran: true, closed };
   } finally {

@@ -19,7 +19,11 @@ export type ApiErrorCode =
   | 'rewards_locked'
   | 'run_rejected'
   | 'unavailable'
-  | 'internal';
+  | 'internal'
+  /** Phase 3 (devnet test token): value features are closed in this country. HTTP 451. */
+  | 'country_blocked'
+  /** Phase 3 (devnet test token): the action needs a linked Solana wallet. */
+  | 'wallet_required';
 
 /** Body of every non-2xx answer. */
 export interface ApiError {
@@ -160,6 +164,8 @@ export interface MeResponse {
   validatedRuns: number;
   validatedRunsNeeded: number;
   serverTime: string;
+  /** Phase 3 (devnet test token). null while CHAIN_MODE is off. */
+  chain: MeChain | null;
 }
 
 export interface PatchMeBody {
@@ -453,4 +459,119 @@ export interface NotificationsResponse {
 
 export interface HealthResponse {
   ok: boolean;
+}
+
+// ---------------------------------------------------------------- Phase 3: devnet test token
+// Only present while the API runs with CHAIN_MODE=localnet or devnet. The token is a valueless
+// test token on a test network; mainnet cannot be configured.
+export type ChainMode = 'off' | 'localnet' | 'devnet';
+
+export interface MeChain {
+  mode: Exclude<ChainMode, 'off'>;
+  /** The linked Solana address, or null. */
+  wallet: string | null;
+  /** True for a signed-in account without a wallet: ranked, Cup, duels, shop and rewards need one. */
+  needsWallet: boolean;
+}
+
+/** GET /chain/config (public). With CHAIN_MODE off only `mode: 'off'` is meaningful. */
+export interface ChainConfigResponse {
+  mode: ChainMode;
+  cluster: 'localnet' | 'devnet' | null;
+  programId: string | null;
+  mint: string | null;
+  /** Base units of the token per whole tChip. */
+  unit: number;
+  decimals: number;
+  tokenLabel: 'tChips';
+  /** The test-token faucet is switched on. */
+  faucet: boolean;
+  /** tChips one faucet request gives. */
+  faucetAmount: number;
+  /** Delay before reward tChips can be withdrawn. */
+  vestSeconds: number;
+  feeBps: number;
+  burnBps: number;
+  /** Value features are closed for the country this request came from. */
+  blocked: boolean;
+}
+
+export type WithdrawalStatus = 'prepared' | 'submitted' | 'confirmed' | 'expired' | 'failed';
+
+export interface OpenWithdrawal {
+  id: string;
+  amount: number;
+  status: WithdrawalStatus;
+}
+
+/** GET /chain/status (signed in). All amounts are whole tChips. */
+export interface ChainStatusResponse {
+  wallet: string | null;
+  /** The wallet has its account in the program. */
+  registered: boolean;
+  onchain: {
+    available: number;
+    /** Reward tChips still vesting: playable, not withdrawable yet. */
+    locked: number;
+    /** When the vesting part unlocks (ISO), or null when nothing is vesting. */
+    unlockAt: string | null;
+  };
+  /** What a withdrawal could take right now. */
+  withdrawable: number;
+  dbBalance: number;
+  /** Operations of this player that are still being written to the chain. */
+  pendingOps: number;
+  /** Withdrawals are on hold while this account is reviewed. */
+  hold: boolean;
+  openWithdrawal: OpenWithdrawal | null;
+  /** Deposits found on-chain and credited by this call. */
+  credited: number;
+}
+
+export interface WalletLinkBody {
+  address: string;
+  /** base58 signature of the message from POST /auth/wallet/nonce. */
+  signature: string;
+}
+
+export interface DepositConfirmRequest {
+  /** Signature (base58) of the deposit transaction the wallet sent. */
+  signature: string;
+}
+export interface DepositConfirmResponse {
+  /** tChips credited by this call (0 when the signature was credited before). */
+  credited: number;
+  /** The deposit's amount in tChips. */
+  amount: number;
+  balance: number;
+}
+
+export interface WithdrawPrepareRequest {
+  /** Whole tChips. */
+  amount: number;
+}
+export interface WithdrawPrepareResponse {
+  withdrawId: string;
+  amount: number;
+  /** Unsigned transaction (base64) for the wallet's signTransaction. The server co-signs and sends it. */
+  transaction: string;
+  lastValidBlockHeight: number;
+  balance: number;
+}
+export interface WithdrawSubmitRequest {
+  withdrawId: string;
+  /** The transaction signed by the wallet, base64, serialized without requiring all signatures. */
+  signedTx: string;
+}
+export interface WithdrawSubmitResponse {
+  withdrawId: string;
+  status: WithdrawalStatus;
+  signature: string | null;
+  balance: number;
+}
+
+export interface FaucetResponse {
+  /** Test tokens (whole tChips) minted to the wallet's token account. */
+  amount: number;
+  signature: string;
 }

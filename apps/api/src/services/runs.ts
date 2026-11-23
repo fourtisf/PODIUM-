@@ -9,12 +9,13 @@ import {
 import type { Period, Run, User } from '@prisma/client';
 import { LIMITS, TX } from '../config';
 import type { After, Ctx, Tx } from '../ctx';
-import { AppError, invalid, notFound } from '../errors';
+import { enqueueOp, poolKind, walletOf } from '../chain/outbox';
+import { AppError, conflict, invalid, notFound } from '../errors';
 import { esc, seededUnit } from '../util';
 import { GAMES_CACHE, boardChanged, placeOf, splitFor } from './boards';
 import { duelRunJudged, duelRunStart } from './duels';
 import { currentVersion, versionDef } from './gameVersions';
-import { applyLedger, lockUser } from './ledger';
+import { applyLedger, lockUser, payReward } from './ledger';
 import { trackRun } from './missions';
 import { addActivity, notify } from './notifications';
 import { cupPeriod, weeklyPeriod } from './periods';
@@ -47,13 +48,14 @@ export async function startRun(ctx: Ctx, tx: Tx, user: User, body: StartRunReque
   if (body.mode === 'practice') {
     // The first practice runs are free; after that practice costs a little and is not pooled.
     free = (await tx.user.updateMany({ where: { id: user.id, freePractice: { gt: 0 } }, data: { freePractice: { decrement: 1 } } })).count === 1;
-    entry = free ? 0 : ECONOMY.practiceEntry;
+    // The practice entry is not pooled anywhere, so in chain mode practice is free: no tChips exist off-chain only.
+    entry = free || ctx.chain ? 0 : ECONOMY.practiceEntry;
   } else if (body.mode === 'ranked') {
-    period = await weeklyPeriod(tx, game, now);
+    period = await weeklyPeriod(tx, game, now, ctx);
     entry = ECONOMY.rankedEntry;
   } else if (body.mode === 'cup') {
     if (game !== cupGame(now)) throw invalid(`This week's Cup game is ${gameMeta(cupGame(now)).name}.`);
-    period = await cupPeriod(tx, now);
+    period = await cupPeriod(tx, now, ctx);
     entry = ECONOMY.cupEntry;
   } else if (body.mode === 'duel') {
     if (!body.duelId) throw invalid('duelId is required for a duel run.');
@@ -74,7 +76,14 @@ export async function startRun(ctx: Ctx, tx: Tx, user: User, body: StartRunReque
   });
   await applyLedger(tx, { userId: user.id, amount: -entry, reason: 'entry', idemKey: `entry:${run.id}`, ref: run.id, at: now, stat: 'spent' });
   // Ranked and Cup entries go to the pool in full; the platform fee is taken when the period closes.
-  if (period && entry) await tx.period.update({ where: { id: period.id }, data: { pool: { increment: entry } } });
+  if (period && entry) {
+    const p = await tx.period.update({ where: { id: period.id }, data: { pool: { increment: entry } } });
+    if (ctx.chain) {
+      // The on-chain pool takes no entry once it is closed, so neither does the ledger.
+      if (p.closed) throw conflict('That week just closed. Start the run again.');
+      await enqueueOp(ctx, tx, 'enterPool', `entry:${run.id}`, { kind: poolKind(p.kind), game: p.game, start: Math.floor(+p.startAt / 1000), wallet: await walletOf(tx, user.id) }, user.id);
+    }
+  }
   const u = await tx.user.update({ where: { id: user.id }, data: { plays: { increment: 1 } } });
   return {
     status: 200,
@@ -156,19 +165,21 @@ async function top5(tx: Tx, periodId: string, me: string): Promise<FinishRunResp
 }
 
 /** The inviter's reward: paid once the invited player has done enough ranked runs, capped per inviter per week. */
-async function payInviter(tx: Tx, invited: User, now: Date): Promise<void> {
+async function payInviter(ctx: Ctx, tx: Tx, invited: User, now: Date): Promise<void> {
   if (!invited.referredById || invited.refPaid || invited.rankedDone < REFERRAL.rankedRunsNeeded) return;
   const inviter = await tx.user.findUnique({ where: { id: invited.referredById } });
   // Phase 2 gating also applies to the inviter. While they are not eligible (or over this week's
   // cap) the reward stays pending and is tried again on the invited player's next ranked run.
   if (!inviter || !rewardsUnlocked(inviter)) return;
+  // Chain mode: the bonus is a reward from the on-chain pot and needs the inviter's wallet. It stays pending without one.
+  if (ctx.chain && !inviter.wallet) return;
   const week = weekKey(now);
   if ((await tx.referralReward.count({ where: { inviterId: inviter.id, week } })) >= REFERRAL.inviterWeeklyCap) return;
   const made = await tx.referralReward.createMany({ data: [{ inviterId: inviter.id, invitedId: invited.id, week, createdAt: now }], skipDuplicates: true });
   if (made.count === 0) return;
-  await applyLedger(tx, { userId: inviter.id, amount: REFERRAL.inviterBonus, reason: 'referral', idemKey: `referral:inviter:${invited.id}`, ref: invited.id, at: now });
+  const paid = await payReward(ctx, tx, { userId: inviter.id, amount: REFERRAL.inviterBonus, reason: 'referral', idemKey: `referral:inviter:${invited.id}`, ref: invited.id, at: now });
   await tx.user.update({ where: { id: invited.id }, data: { refPaid: true } });
-  await notify(tx, inviter.id, 'referral', `<b>${esc(invited.name)}</b> joined through your invite and played. <b>+${REFERRAL.inviterBonus} tChips</b>.`, now);
+  await notify(tx, inviter.id, 'referral', `<b>${esc(invited.name)}</b> joined through your invite and played. <b>+${ctx.chain ? paid : REFERRAL.inviterBonus} tChips</b>.`, now);
 }
 
 /**
@@ -212,7 +223,7 @@ export async function settleRun(ctx: Ctx, tx: Tx, runId: string, input: RunInput
 
   // Rejected or flagged: the entry is not refunded and nothing is recorded. In a duel that player forfeits.
   if (verdict.kind !== 'ok') {
-    if (mode === 'duel' && run.duelId) await duelRunJudged(tx, run.duelId, run.userId, null, now);
+    if (mode === 'duel' && run.duelId) await duelRunJudged(ctx, tx, run.duelId, run.userId, null, now);
     if (verdict.kind === 'reject') return save(422, new AppError(422, 'run_rejected', verdict.reason).body());
     return save(200, {
       runId, status: 'flagged', game, mode, score: verdict.score, place: 0, newBest: false, xpGained: 0, boxDropped: false, badges: ['held'],
@@ -280,9 +291,9 @@ export async function settleRun(ctx: Ctx, tx: Tx, runId: string, input: RunInput
       where: { id: me.id },
       data: { xp: { increment: xp }, boxes: { increment: boxDropped ? 1 : 0 }, rankedDone: { increment: ranked }, validatedRanked: { increment: ranked } },
     });
-    if (ranked) await payInviter(tx, u, now);
+    if (ranked) await payInviter(ctx, tx, u, now);
   } else if (mode === 'duel' && run.duelId) {
-    const d = await duelRunJudged(tx, run.duelId, me.id, score, now);
+    const d = await duelRunJudged(ctx, tx, run.duelId, me.id, score, now);
     duel = d.view;
     duelWin = d.duelWin;
     xp = d.xp; // already added by the duel settlement

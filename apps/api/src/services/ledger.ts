@@ -2,10 +2,14 @@
 // written in the caller's transaction together with a guarded atomic update of User.balance.
 import { EMISSIONS, dayNum, scaleEmission, type EmissionPaid } from '@podium/shared';
 import { Prisma } from '@prisma/client';
-import type { Tx } from '../ctx';
+import { enqueueOp, releaseReward, reserveReward, walletOf } from '../chain/outbox';
+import type { Ctx, Tx } from '../ctx';
 import { AppError, notEnoughChips } from '../errors';
 
-export type LedgerReason = 'entry' | 'payout' | 'duel' | 'duel_refund' | 'mission' | 'streak' | 'season' | 'box' | 'shop' | 'refill' | 'referral';
+export type LedgerReason =
+  | 'entry' | 'payout' | 'duel' | 'duel_refund' | 'mission' | 'streak' | 'season' | 'box' | 'shop' | 'refill' | 'referral'
+  // Phase 3 (devnet test token)
+  | 'deposit' | 'withdraw' | 'withdraw_refund';
 
 export interface LedgerEntry {
   userId: string;
@@ -84,13 +88,28 @@ export async function emissionBudget(db: Tx, now: Date): Promise<number> {
  * Pays a reward (mission, streak, season, box) out of the daily budget. The counter row is locked
  * first, so concurrent claims queue up and can never overspend the budget between them.
  */
-export async function emit(tx: Tx, e: Omit<LedgerEntry, 'amount' | 'stat'> & { nominal: number }): Promise<EmissionPaid> {
+export async function emit(ctx: Ctx, tx: Tx, e: Omit<LedgerEntry, 'amount' | 'stat'> & { nominal: number }): Promise<EmissionPaid> {
   const key = emittedKey(e.at);
   const spent = await bump(tx, key, 0); // takes the row lock
   const budget = await emissionBudget(tx, e.at);
-  const chips = scaleEmission(e.nominal, budget, spent);
-  const applied = await applyLedger(tx, { userId: e.userId, amount: chips, reason: e.reason, idemKey: e.idemKey, ref: e.ref, at: e.at, stat: 'won' });
-  if (applied) await bump(tx, key, chips);
-  const paid = applied ? chips : 0;
+  const paid = await payReward(ctx, tx, { ...e, amount: scaleEmission(e.nominal, budget, spent), stat: 'won' });
+  if (paid > 0) await bump(tx, key, paid);
   return { chips: paid, nominal: e.nominal, scaled: paid < e.nominal };
+}
+
+/**
+ * Credits a reward (mission, streak, season, box, referral bonus). In chain mode the amount is
+ * also capped by what is left of the on-chain rewards pot (scaled down, possibly to zero) and
+ * mirrored on-chain with credit_reward, where it vests. Returns the tChips actually paid.
+ */
+export async function payReward(ctx: Ctx, tx: Tx, e: LedgerEntry): Promise<number> {
+  const wallet = ctx.chain ? await walletOf(tx, e.userId) : null;
+  const chips = await reserveReward(ctx, tx, e.amount);
+  const applied = await applyLedger(tx, { ...e, amount: chips });
+  if (!applied) {
+    await releaseReward(ctx, tx, chips);
+    return 0;
+  }
+  if (wallet) await enqueueOp(ctx, tx, 'creditReward', e.idemKey, { wallet, chips }, e.userId);
+  return chips;
 }

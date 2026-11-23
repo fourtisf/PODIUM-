@@ -1,5 +1,6 @@
 // Sign-in flows: guest, email one-time code, Google OAuth, wallet signature (identity only), logout,
-// and the 18+ confirmation. No payment, token or transaction code lives here or anywhere else.
+// and the 18+ confirmation. No payment, token or transaction code lives here (Phase 3, the devnet
+// test token, is in src/chain and routes/chain.ts and only runs while CHAIN_MODE is on).
 import { randomInt } from 'node:crypto';
 import { BRAND, type AuthResponse, type CsrfResponse, type OkResponse, type WalletNonceResponse } from '@podium/shared';
 import type { User } from '@prisma/client';
@@ -13,7 +14,7 @@ import { csrfFor } from '../plugins/csrf';
 import { rateLimit } from '../plugins/ratelimit';
 import { endSession, requireUser, startSession } from '../plugins/session';
 import { sendCode } from '../services/mailer';
-import { createGuest, signIn, type Identity, type SignInOpts } from '../services/users';
+import { createGuest, linkWallet, signIn, type Identity, type SignInOpts } from '../services/users';
 import { hmac, safeEqual, token } from '../util';
 import { parse } from './_util';
 
@@ -193,7 +194,33 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
     if (!ok) throw invalid('That signature does not match the wallet.');
     const res = await signInWith(req, reply, { wallet: addr }, { adult: body.adult === true, requireAdult: true, name: body.name, ref: body.ref });
     await ctx.redis.del(nonceKey(body.address));
+    await registerOnChain(addr);
     return res;
+  });
+
+  /** Chain mode: the wallet's account in the program, paid by the operator. The outbox worker retries it if this fails. */
+  async function registerOnChain(addr: string): Promise<void> {
+    if (!ctx.chain) return;
+    try {
+      await ctx.chain.ensureRegistered(addr);
+    } catch (e) {
+      ctx.log.warn(e, 'could not register the wallet on-chain yet');
+    }
+  }
+
+  // Links a wallet to an account that signed in by email or Google (same nonce and signed message as sign-in).
+  app.post('/auth/wallet/link', async (req, reply): Promise<AuthResponse> => {
+    const user = requireUser(req);
+    if (user.guest) throw new AppError(403, 'guest_not_allowed', 'Sign in first, then link a wallet.');
+    const body = parse(z.object({ address, signature: z.string().min(64).max(100) }), req.body);
+    await rateLimit(ctx, 'authPerIp', req.ip);
+    const nonce = await ctx.redis.get(nonceKey(body.address));
+    if (!nonce) throw invalid('Ask for a new message to sign.');
+    if (!verifySolanaSignature(body.address, walletMessage(body.address, nonce), body.signature)) throw invalid('That signature does not match the wallet.');
+    const linked = await linkWallet(ctx, user.id, body.address);
+    await ctx.redis.del(nonceKey(body.address));
+    await registerOnChain(body.address);
+    return answer(req, reply, linked, false);
   });
 
   // ---------------------------------------------------------------- age gate and logout

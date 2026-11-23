@@ -1,4 +1,6 @@
 // Background jobs of the API process (one instance): weekly close, duel expiry and housekeeping.
+import { startChainWorker, syncRewardsPot, withChainLock } from '../chain/outbox';
+import { sweepWithdrawals } from '../chain/withdrawals';
 import { LIMITS } from '../config';
 import type { Ctx } from '../ctx';
 import { closeDuePeriods } from './close';
@@ -17,7 +19,12 @@ export async function cleanup(ctx: Ctx, now: Date = ctx.clock.now()): Promise<{ 
 }
 
 export async function runJobs(ctx: Ctx): Promise<void> {
-  for (const [name, job] of [['close', () => closeDuePeriods(ctx)], ['duels', () => expireDuels(ctx, ctx.clock.now())], ['cleanup', () => cleanup(ctx)]] as const) {
+  const jobs: [string, () => Promise<unknown>][] = [['close', () => closeDuePeriods(ctx)], ['duels', () => expireDuels(ctx, ctx.clock.now())], ['cleanup', () => cleanup(ctx)]];
+  if (ctx.chain) {
+    // Chain mode: settle open withdrawals (returning dead reservations) and re-read the rewards pot while the outbox is idle.
+    jobs.push(['withdrawals', () => sweepWithdrawals(ctx)], ['rewards pot', () => withChainLock(ctx, () => syncRewardsPot(ctx))]);
+  }
+  for (const [name, job] of jobs) {
     try {
       await job();
     } catch (e) {
@@ -41,5 +48,9 @@ export function startJobs(ctx: Ctx): () => void {
   const timer = setInterval(() => void tick(), LIMITS.jobEveryMs);
   timer.unref();
   void tick();
-  return () => clearInterval(timer);
+  const stopChain = startChainWorker(ctx);
+  return () => {
+    clearInterval(timer);
+    stopChain();
+  };
 }

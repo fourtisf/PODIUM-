@@ -8,6 +8,7 @@ import {
 import type { Duel, User } from '@prisma/client';
 import { LIMITS } from '../config';
 import type { Ctx, Tx } from '../ctx';
+import { DUEL_CHAIN_GRACE_SECONDS, enqueueOp, walletOf } from '../chain/outbox';
 import { conflict, invalid, notFound } from '../errors';
 import { esc } from '../util';
 import { addFee, applyLedger, lockUser } from './ledger';
@@ -57,6 +58,13 @@ export async function createOrJoinDuel(ctx: Ctx, tx: Tx, user: User, game: GameK
   if (found.length) duel = await tx.duel.update({ where: { id: found[0]!.id }, data: { status: 'matched', joinerId: user.id, matchedAt: now } });
   else duel = await tx.duel.create({ data: { game, stake, creatorId: user.id, createdAt: now, expiresAt: new Date(+now + ECONOMY.duelExpiryHours * HOUR) } });
   await applyLedger(tx, { userId: user.id, amount: -stake, reason: 'duel', idemKey: `duel:${duel.id}:stake:${user.id}`, ref: duel.id, at: now, stat: 'spent' });
+  if (ctx.chain) {
+    // The stake is locked in the on-chain duel escrow: duel_open for the creator, duel_join for the joiner.
+    const wallet = await walletOf(tx, user.id);
+    if (role === 'creator') {
+      await enqueueOp(ctx, tx, 'duelOpen', `duel:${duel.id}:open`, { duelId: duel.id, wallet, chips: stake, expiresAt: Math.floor(+duel.expiresAt / 1000) + DUEL_CHAIN_GRACE_SECONDS }, user.id);
+    } else await enqueueOp(ctx, tx, 'duelJoin', `duel:${duel.id}:join`, { duelId: duel.id, wallet }, user.id);
+  }
   const view = await duelView(tx, duel, user.id);
   const u = await tx.user.findUniqueOrThrow({ where: { id: user.id } });
   return { duel: view, role, target: view.target, opponent: view.opponent, balance: u.balance };
@@ -81,10 +89,11 @@ export interface DuelSettled {
 }
 
 /** Pays the winner, records the fee, XP, stats and notifications, and closes the duel. */
-async function settle(tx: Tx, d: Duel, winnerId: string, joinerScore: number | null, now: Date): Promise<{ payout: number; missions: MissionId[] }> {
+async function settle(ctx: Ctx, tx: Tx, d: Duel, winnerId: string, joinerScore: number | null, now: Date): Promise<{ payout: number; missions: MissionId[] }> {
   const loserId = winnerId === d.creatorId ? d.joinerId! : d.creatorId;
   const payout = duelPayout(d.stake);
   await applyLedger(tx, { userId: winnerId, amount: payout, reason: 'duel', idemKey: `duel:${d.id}:win`, ref: d.id, at: now, stat: 'won' });
+  if (ctx.chain) await enqueueOp(ctx, tx, 'duelSettle', `duel:${d.id}:settle`, { duelId: d.id, winner: await walletOf(tx, winnerId), chips: payout }, winnerId);
   await addFee(tx, duelFee(d.stake), now);
   const winner = await tx.user.update({ where: { id: winnerId }, data: { xp: { increment: XP.duelWin }, duelsWon: { increment: 1 } } });
   const loser = await tx.user.update({ where: { id: loserId }, data: { xp: { increment: XP.duelLoss }, duelsLost: { increment: 1 } } });
@@ -107,7 +116,7 @@ async function settle(tx: Tx, d: Duel, winnerId: string, joinerScore: number | n
  *  - joiner, accepted: higher score wins, a tie goes to the earlier score (the creator);
  *  - joiner, forfeited: the creator wins.
  */
-export async function duelRunJudged(tx: Tx, duelId: string, userId: string, score: number | null, now: Date): Promise<DuelSettled> {
+export async function duelRunJudged(ctx: Ctx, tx: Tx, duelId: string, userId: string, score: number | null, now: Date): Promise<DuelSettled> {
   const d = await lockDuel(tx, duelId);
   const none: DuelSettled = { view: { won: false, opponent: null, opponentScore: null, payout: 0, stake: d?.stake ?? 0 }, duelWin: false, xp: 0 };
   if (!d) return none;
@@ -116,6 +125,8 @@ export async function duelRunJudged(tx: Tx, duelId: string, userId: string, scor
     if (score === null) {
       await tx.duel.update({ where: { id: d.id }, data: { status: 'settled', winnerId: null, settledAt: now } });
       await addFee(tx, d.stake, now);
+      // On-chain: the open duel is settled with no winner, the stake goes to the treasury.
+      await enqueueOp(ctx, tx, 'duelSettle', `duel:${d.id}:settle`, { duelId: d.id, winner: null, chips: 0 }, userId);
       await notify(tx, userId, 'duel', 'Your duel run was not accepted, so the duel was closed and the stake is forfeited.', now);
       return none;
     }
@@ -124,7 +135,7 @@ export async function duelRunJudged(tx: Tx, duelId: string, userId: string, scor
   }
   if (d.joinerId !== userId || d.status !== 'matched') return none;
   const won = score !== null && score > (d.creatorScore ?? 0);
-  const { payout } = await settle(tx, d, won ? userId : d.creatorId, score, now);
+  const { payout } = await settle(ctx, tx, d, won ? userId : d.creatorId, score, now);
   return {
     view: { won, opponent: await nameOf(tx, d.creatorId), opponentScore: d.creatorScore, payout: won ? payout : 0, stake: d.stake },
     duelWin: won,
@@ -172,6 +183,7 @@ export async function expireDuels(ctx: Ctx, now: Date): Promise<{ refunded: numb
       if (!d || d.status !== 'waiting' || d.expiresAt > now) return;
       await tx.duel.update({ where: { id }, data: { status: 'refunded', settledAt: now } });
       await applyLedger(tx, { userId: d.creatorId, amount: d.stake, reason: 'duel_refund', idemKey: `refund:${d.id}`, ref: d.id, at: now, stat: 'unspent' });
+      if (ctx.chain) await enqueueOp(ctx, tx, 'duelRefund', `duel:${d.id}:refund`, { duelId: d.id, wallet: await walletOf(tx, d.creatorId) }, d.creatorId);
       await notify(tx, d.creatorId, 'duel', `Nobody joined your <b>${esc(gameMeta(d.game as GameKey).name)}</b> duel, so your ${fmt(d.stake)} tChips are back.`, now);
       refunded++;
     });
@@ -181,7 +193,7 @@ export async function expireDuels(ctx: Ctx, now: Date): Promise<{ refunded: numb
     await ctx.db.$transaction(async (tx) => {
       const d = await lockDuel(tx, id);
       if (!d || d.status !== 'matched') return;
-      await settle(tx, d, d.creatorId, null, now);
+      await settle(ctx, tx, d, d.creatorId, null, now);
       forfeited++;
     });
   }

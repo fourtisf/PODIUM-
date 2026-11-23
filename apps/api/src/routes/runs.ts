@@ -2,6 +2,7 @@ import { GAME_KEYS, type ApiError, type FinishRunResponse, type StartRunRequest,
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { LIMITS } from '../config';
+import { requireValue } from '../chain/geo';
 import { conflict, notFound } from '../errors';
 import { idemKey, idempotent, sendOutcome } from '../plugins/idempotency';
 import { requirePlayer, requireUser } from '../plugins/session';
@@ -24,6 +25,8 @@ export default async function runRoutes(app: FastifyInstance): Promise<void> {
     const body = parse(startSchema, req.body) as StartRunRequest;
     // Guests can play practice only; everything else needs a signed-in account that confirmed 18+.
     const user = body.mode === 'practice' ? requireUser(req) : requirePlayer(req);
+    // Chain mode: ranked, Cup and duel runs are value features (wallet needed, closed in blocked countries).
+    if (body.mode === 'ranked' || body.mode === 'cup' || body.mode === 'duel') requireValue(ctx, req, user);
     return idempotent<StartRunResponse>(ctx, reply, user.id, 'runs.start', idemKey(req), (tx) => startRun(ctx, tx, user, body));
   });
 

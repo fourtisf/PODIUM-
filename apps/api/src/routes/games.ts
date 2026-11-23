@@ -17,7 +17,7 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
       const cards = JSON.parse(cached) as PublicCard[];
       if (cards[0] && +new Date(cards[0].endsAt) > +now) return cards;
     }
-    const periods = await allWeeklyPeriods(ctx.db, now);
+    const periods = await allWeeklyPeriods(ctx.db, now, ctx);
     const plays = await ctx.db.run.groupBy({ by: ['periodId'], where: { periodId: { in: periods.map((p) => p.id) } }, _count: { _all: true } });
     const count = new Map(plays.map((p) => [p.periodId, p._count._all]));
     const cards: PublicCard[] = [];
@@ -50,12 +50,12 @@ export default async function gameRoutes(app: FastifyInstance): Promise<void> {
   app.get('/leaderboard/:game', async (req): Promise<LeaderboardResponse> => {
     const { game } = req.params as { game: string };
     if (!isGameKey(game)) throw notFound('No such game.');
-    const period = await weeklyPeriod(ctx.db, game, ctx.clock.now());
+    const period = await weeklyPeriod(ctx.db, game, ctx.clock.now(), ctx);
     return boardView(ctx, period, req.user?.id ?? null);
   });
 
   app.get('/cup', async (req): Promise<CupResponse> => {
-    const period = await cupPeriod(ctx.db, ctx.clock.now());
+    const period = await cupPeriod(ctx.db, ctx.clock.now(), ctx);
     return { ...(await boardView(ctx, period, req.user?.id ?? null)), entry: ECONOMY.cupEntry };
   });
 

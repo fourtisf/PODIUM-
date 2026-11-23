@@ -172,3 +172,12 @@ export const ANTI_ABUSE = {
 // ---------------------------------------------------------------- duel timing
 /** A joiner who matched a duel but has not finished a run after this long forfeits to the creator. */
 export const DUEL_JOINER_TIMEOUT_HOURS = 2;
+
+// ---------------------------------------------------------------- Phase 3: devnet test token
+// Used only while CHAIN_MODE is localnet or devnet. The token is a valueless test token.
+export const CHAIN_ECONOMY = {
+  /** Test tChips one faucet request mints to a wallet (CHAIN_FAUCET_AMOUNT overrides it). */
+  faucetAmount: 5000,
+  /** One faucet request per account per this many hours. */
+  faucetEveryHours: 24,
+} as const;

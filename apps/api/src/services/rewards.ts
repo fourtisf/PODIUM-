@@ -7,8 +7,9 @@ import {
   type SeasonClaimResponse, type ShopBuyRequest, type ShopBuyResponse, type ShopResponse, type StreakClaimResponse,
 } from '@podium/shared';
 import type { User } from '@prisma/client';
+import { enqueueOp, walletOf } from '../chain/outbox';
 import type { Ctx, Tx } from '../ctx';
-import { AppError, conflict, invalid, notFound } from '../errors';
+import { AppError, conflict, forbidden, invalid, notFound } from '../errors';
 import { BURNED, applyLedger, bump, emit, lockUser, readCounter } from './ledger';
 import { notify } from './notifications';
 import { ownedItems, rewardsUnlocked, streakState } from './users';
@@ -38,7 +39,7 @@ export async function claimMission(ctx: Ctx, tx: Tx, userId: string, id: string)
   if (!row || row.progress < def.target) throw conflict('That mission is not complete yet.');
   if (row.claimed) throw conflict('That mission is already claimed.');
   await tx.missionProgress.update({ where: { id: row.id }, data: { claimed: true } });
-  const paid = await emit(tx, { userId, nominal: def.chips, reason: 'mission', idemKey: `mission:${userId}:${day}:${def.id}`, ref: def.id, at: now });
+  const paid = await emit(ctx, tx, { userId, nominal: def.chips, reason: 'mission', idemKey: `mission:${userId}:${day}:${def.id}`, ref: def.id, at: now });
   // Clearing all three adds one mystery box, once: the "bonus" row is the marker.
   const claimed = await tx.missionProgress.count({ where: { userId, day, mission: { in: defs.map((d) => d.id) }, claimed: true } });
   let bonusBox = false;
@@ -61,7 +62,7 @@ export async function claimStreak(ctx: Ctx, tx: Tx, userId: string): Promise<Str
   if (st.claimedToday) throw conflict('Today\'s streak is already claimed.');
   const i = (st.nextDay - 1) % STREAK.length;
   const box = i === STREAK_BOX_INDEX;
-  const paid = await emit(tx, { userId, nominal: STREAK[i]!, reason: 'streak', idemKey: `streak:${userId}:${day}`, at: now });
+  const paid = await emit(ctx, tx, { userId, nominal: STREAK[i]!, reason: 'streak', idemKey: `streak:${userId}:${day}`, at: now });
   const u = await tx.user.update({ where: { id: userId }, data: { streak: st.nextDay, streakDay: day, boxes: { increment: box ? 1 : 0 } } });
   await notify(tx, userId, 'streak', `Daily streak day <b>${st.nextDay}</b> claimed.`, now);
   return { day: st.nextDay, box, ...paid, balance: u.balance, boxes: u.boxes };
@@ -81,7 +82,7 @@ export async function claimSeason(ctx: Ctx, tx: Tx, userId: string, tier: number
   let fallback = false;
   let boxes = 0;
   const r = t.reward;
-  if (r.kind === 'chips') paid = await emit(tx, { userId, nominal: r.amount, reason: 'season', idemKey, at: now });
+  if (r.kind === 'chips') paid = await emit(ctx, tx, { userId, nominal: r.amount, reason: 'season', idemKey, at: now });
   else if (r.kind === 'box') boxes = 1;
   else {
     const kind = r.kind;
@@ -89,7 +90,7 @@ export async function claimSeason(ctx: Ctx, tx: Tx, userId: string, tier: number
     const got = await tx.item.createMany({ data: [{ userId, kind, ref }], skipDuplicates: true });
     if (got.count === 0) {
       fallback = true;
-      paid = await emit(tx, { userId, nominal: ECONOMY.ownedCosmeticFallback, reason: 'season', idemKey, at: now });
+      paid = await emit(ctx, tx, { userId, nominal: ECONOMY.ownedCosmeticFallback, reason: 'season', idemKey, at: now });
     }
   }
   const u = await tx.user.update({ where: { id: userId }, data: { boxes: { increment: boxes } } });
@@ -129,7 +130,7 @@ export async function openBox(ctx: Ctx, tx: Tx, userId: string, openId: string):
     await tx.user.update({ where: { id: userId }, data: { xp: { increment: amount } } });
     prize = { kind: 'xp', amount };
   } else {
-    const paid = await emit(tx, { userId, nominal: stepped(BOX.chipsMin, BOX.chipsMax), reason: 'box', idemKey: `box:${userId}:${openId}`, at: now });
+    const paid = await emit(ctx, tx, { userId, nominal: stepped(BOX.chipsMin, BOX.chipsMax), reason: 'box', idemKey: `box:${userId}:${openId}`, at: now });
     prize = { kind: 'chips', ...paid };
   }
   const u = await fresh(tx, userId);
@@ -153,8 +154,11 @@ export async function shopBuy(ctx: Ctx, tx: Tx, userId: string, body: ShopBuyReq
     item = { kind: 'frame', ref: body.id };
   }
   if (item && (await tx.item.findUnique({ where: { userId_kind_ref: { userId, ...item } } }))) throw conflict('You already own that.');
-  await applyLedger(tx, { userId, amount: -price, reason: 'shop', idemKey: `shop:${userId}:${clientKey}`, ref: item ? `${item.kind}:${item.ref}` : 'box', at: now, stat: 'spent' });
+  const idem = `shop:${userId}:${clientKey}`;
+  await applyLedger(tx, { userId, amount: -price, reason: 'shop', idemKey: idem, ref: item ? `${item.kind}:${item.ref}` : 'box', at: now, stat: 'spent' });
   const burn = Math.round(price * ECONOMY.shopBurn);
+  // Chain mode: the same amount is spent on-chain and the same rounded share is burned from the mint.
+  if (ctx.chain) await enqueueOp(ctx, tx, 'spend', idem, { wallet: await walletOf(tx, userId), chips: price, burn }, userId);
   const burned = await bump(tx, BURNED, burn);
   if (item) await tx.item.create({ data: { userId, ...item } });
   const u = await tx.user.update({
@@ -175,6 +179,8 @@ export async function shopView(ctx: Ctx, userId: string | null): Promise<ShopRes
 }
 
 export async function refill(ctx: Ctx, tx: Tx, userId: string, clientKey: string): Promise<RefillResponse> {
+  // Chain mode has no free tChips: every balance is a deposit, a prize or a reward from the pot.
+  if (ctx.chain) throw forbidden('There is no refill while tChips are a devnet test token. Deposit test tokens from the Wallet.');
   await lockUser(tx, userId);
   const user = await fresh(tx, userId);
   if (user.balance >= ECONOMY.refillUnder) throw conflict(`Refill opens once you are under ${ECONOMY.refillUnder} tChips.`);
