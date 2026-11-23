@@ -43,14 +43,10 @@ export function BoxSvg({ size }: { size?: number }) {
   );
 }
 
+/** The brand mark: Bolt the robot on a rounded tile. Same drawing as /public/icon.svg. */
 export function Mark() {
   return (
-    <svg viewBox="0 0 32 32" aria-hidden="true">
-      <rect width="32" height="32" rx="9" fill="#ff3d77" />
-      <rect x="6.5" y="17" width="5.6" height="8.5" rx="1.4" fill="#fff" />
-      <rect x="13.2" y="9" width="5.6" height="16.5" rx="1.4" fill="#fff" />
-      <rect x="19.9" y="14" width="5.6" height="11.5" rx="1.4" fill="#fff" />
-    </svg>
+    <svg aria-hidden="true" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#ff8fc0"/><g transform="translate(1 4.5) scale(.31)"><path d="M100 40V20" stroke="#0c0f26" strokeWidth="7" strokeLinecap="round"/><path d="M100 14l24 8-24 8z" fill="#ff3d77" stroke="#0c0f26" strokeWidth="5" strokeLinejoin="round"/><g stroke="#0c0f26" strokeWidth="7" strokeLinejoin="round"><rect x="26" y="88" width="20" height="44" rx="8" fill="#a79bff"/><rect x="154" y="88" width="20" height="44" rx="8" fill="#a79bff"/><rect x="40" y="40" width="120" height="124" rx="38" fill="#e9edff"/><rect x="54" y="74" width="92" height="46" rx="23" fill="#0c0f26"/></g><path d="M72 98l10-8 10 8M108 98l10-8 10 8" fill="none" stroke="#7af0c5" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round"/><path d="M76 140q24 14 48 0" fill="none" stroke="#0c0f26" strokeWidth="6" strokeLinecap="round"/><circle cx="62" cy="138" r="7" fill="#ff8fc0"/><circle cx="138" cy="138" r="7" fill="#ff8fc0"/><path d="M60 56q20-10 40-10" fill="none" stroke="#fff" strokeWidth="6" strokeLinecap="round"/></g></svg>
   );
 }
 

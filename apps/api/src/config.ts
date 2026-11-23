@@ -1,7 +1,7 @@
 // Environment and server-only tunables. Economy numbers do NOT live here: they come from @podium/shared.
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { CHAIN_ECONOMY } from '@podium/shared';
+import { BRAND, CHAIN_ECONOMY } from '@podium/shared';
 import dotenv from 'dotenv';
 
 /**
@@ -89,7 +89,7 @@ export function loadConfig(over: Partial<Config> = {}): Config {
     googleClientId: e.GOOGLE_CLIENT_ID || '',
     googleClientSecret: e.GOOGLE_CLIENT_SECRET || '',
     smtpUrl: e.EMAIL_SMTP_URL || '',
-    emailFrom: e.EMAIL_FROM || 'Podium <no-reply@example.com>',
+    emailFrom: e.EMAIL_FROM || `${BRAND.name} <no-reply@example.com>`,
     requireStream: e.REQUIRE_STREAM !== '0',
     rateScale: Number(e.RATE_LIMIT_SCALE || 1) || 1,
     chain: {

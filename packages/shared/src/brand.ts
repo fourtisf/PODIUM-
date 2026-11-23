@@ -11,7 +11,7 @@ function envName(): string | undefined {
 }
 
 export const BRAND = {
-  name: envName() || 'Podium',
+  name: envName() || 'Climb Games',
   line: 'Skill games with weekly prize pools',
   currency: 'tChips',
 } as const;

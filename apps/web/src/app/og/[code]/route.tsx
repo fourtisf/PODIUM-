@@ -21,6 +21,15 @@ async function coverData(game: GameKey): Promise<string | null> {
   }
 }
 
+async function markData(): Promise<string | null> {
+  try {
+    const svg = await readFile(path.join(process.cwd(), 'public', 'icon.svg'));
+    return `data:image/svg+xml;base64,${svg.toString('base64')}`;
+  } catch {
+    return null;
+  }
+}
+
 async function challenge(code: string): Promise<ChallengeResponse | null> {
   if (!/^[A-Za-z0-9_-]{4,32}$/.test(code)) return null;
   try {
@@ -36,7 +45,7 @@ async function challenge(code: string): Promise<ChallengeResponse | null> {
 export async function GET(_req: Request, { params }: { params: { code: string } }) {
   const c = await challenge(params.code);
   const game: GameKey = c?.game ?? 'hopper';
-  const cover = await coverData(game);
+  const [cover, mark] = await Promise.all([coverData(game), markData()]);
   const ink = '#0c0f26';
   return new ImageResponse(
     (
@@ -49,11 +58,12 @@ export async function GET(_req: Request, { params }: { params: { code: string } 
         </div>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '56px 50px 26px 50px' }}>
           <div style={{ display: 'flex', alignItems: 'center' }}>
-            <div style={{ width: 44, height: 44, borderRadius: 13, background: '#ff3d77', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 8 }}>
-              <div style={{ width: 8, height: 12, background: '#fff', marginRight: 1 }} />
-              <div style={{ width: 8, height: 24, background: '#fff', marginRight: 1 }} />
-              <div style={{ width: 8, height: 16, background: '#fff' }} />
-            </div>
+            {mark ? (
+              // eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text
+              <img src={mark} width={44} height={44} />
+            ) : (
+              <div style={{ width: 44, height: 44, borderRadius: 11, background: '#ff8fc0' }} />
+            )}
             <div style={{ marginLeft: 14, fontSize: 30, fontWeight: 800, color: ink }}>{BRAND.name}</div>
           </div>
           {c ? (

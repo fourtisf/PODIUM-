@@ -21,7 +21,7 @@ function rr(x: CanvasRenderingContext2D, a: number, b: number, w: number, h: num
   x.fill();
 }
 
-export function paintShareCard(c: HTMLCanvasElement, d: ShareCardData, img: CanvasImageSource | null): void {
+export function paintShareCard(c: HTMLCanvasElement, d: ShareCardData, img: CanvasImageSource | null, mark: CanvasImageSource | null = null): void {
   c.width = 1200;
   c.height = 630;
   const x = c.getContext('2d');
@@ -40,12 +40,12 @@ export function paintShareCard(c: HTMLCanvasElement, d: ShareCardData, img: Canv
     x.fillStyle = '#0c0f26';
     x.fillRect(0, 0, 660, 630);
   }
-  x.fillStyle = '#ff3d77';
-  rr(x, 710, 56, 44, 44, 13);
-  x.fillStyle = '#fff';
-  x.fillRect(719, 80, 8, 12);
-  x.fillRect(728, 68, 8, 24);
-  x.fillRect(737, 76, 8, 16);
+  if (mark) {
+    x.drawImage(mark, 710, 56, 44, 44);
+  } else {
+    x.fillStyle = '#ff8fc0';
+    rr(x, 710, 56, 44, 44, 11);
+  }
   x.fillStyle = '#0c0f26';
   x.font = `800 30px ${DISP}`;
   x.textBaseline = 'middle';
@@ -81,20 +81,22 @@ export async function renderShareCard(d: ShareCardData): Promise<string | null> 
   } catch {
     /* fall back to system fonts */
   }
-  const img = await new Promise<HTMLImageElement | null>((resolve) => {
-    const im = new Image();
-    im.width = 640;
-    im.height = 400;
-    im.onload = () => resolve(im);
-    im.onerror = () => resolve(null);
-    im.src = `/covers/${d.gameKey}.svg`;
-  });
+  const load = (src: string, w: number, h: number) =>
+    new Promise<HTMLImageElement | null>((resolve) => {
+      const im = new Image();
+      im.width = w;
+      im.height = h;
+      im.onload = () => resolve(im);
+      im.onerror = () => resolve(null);
+      im.src = src;
+    });
+  const [img, mark] = await Promise.all([load(`/covers/${d.gameKey}.svg`, 640, 400), load('/icon.svg', 64, 64)]);
   try {
-    paintShareCard(c, d, img);
+    paintShareCard(c, d, img, mark);
     return c.toDataURL('image/png');
   } catch {
     try {
-      paintShareCard(c, d, null);
+      paintShareCard(c, d, null, null);
       return c.toDataURL('image/png');
     } catch {
       return null;
