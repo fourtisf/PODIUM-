@@ -1,9 +1,9 @@
 // The outbox worker: order, sequence numbers, recovery after a crash, rejected operations, and
 // the rewards-pot cap. Against the REAL program, in-process.
-import { poolPda } from '@podium/chain';
+import { PodiumProgramError, poolPda, type PodiumErrorName } from '@podium/chain';
 import { STREAK, type StreakClaimResponse } from '@podium/shared';
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'vitest';
-import { drainChainOps, withChainLock } from '../src/chain/outbox';
+import { classify, drainChainOps, withChainLock } from '../src/chain/outbox';
 import { weeklyPeriod } from '../src/services/periods';
 import { CHAIN_READY, assertParity, chainApp, drain, onChain, walletUser, type ChainTest, type WalletClient } from './chain-helpers';
 import { GAME, errCode } from './helpers';
@@ -151,6 +151,25 @@ describe.skipIf(!CHAIN_READY)('outbox worker', () => {
     await t.world.setPaused(false);
     expect(await drain(t)).toMatchObject({ applied: 1, failed: 0 });
     expect(await onChain(t, a)).toBe(200);
+  });
+});
+
+describe('which failures fail an operation and which make the queue wait', () => {
+  const us = 'Eo3NPwtAjr8iDSUEctJuLLhoHBho4Zm1iZKaVoWALyTz';
+  const err = (code: PodiumErrorName | undefined, custom?: number, logs: string[] = []) => new PodiumProgramError(code, custom, logs, 'x');
+  test('program errors reject; paused, a pool that has not ended, the network and an operator without SOL wait', () => {
+    expect(classify(err('InsufficientBalance', 6004), 'enterPool', us)).toEqual({ verdict: 'rejected', text: 'InsufficientBalance' });
+    expect(classify(err('PoolClosed', 6007), 'enterPool', us).verdict).toBe('rejected');
+    expect(classify(err('PoolNotEnded', 6008), 'closePool', us).verdict).toBe('retry');
+    expect(classify(err('PoolNotEnded', 6008), 'enterPool', us).verdict).toBe('rejected');
+    expect(classify(err('Paused', 6001), 'spend', us).verdict).toBe('retry');
+    // Anchor's own checks (an account that does not exist) are definite.
+    expect(classify(err(undefined, 3012, [`Program ${us} failed: custom program error: 0xbc4`]), 'enterPool', us)).toEqual({ verdict: 'rejected', text: 'custom:3012' });
+    // The operator cannot pay the rent of a new pool or duel account: wait for SOL, do not fail players.
+    const noSol = err(undefined, 1, ['Program 11111111111111111111111111111111 failed: custom program error: 0x1', `Program ${us} failed: custom program error: 0x1`]);
+    expect(classify(noSol, 'duelOpen', us).verdict).toBe('retry');
+    expect(classify(err(undefined, undefined, []), 'spend', us).verdict).toBe('retry');
+    expect(classify(new Error('fetch failed'), 'spend', us).verdict).toBe('retry');
   });
 });
 

@@ -191,14 +191,22 @@ function execute(chain: ChainService, op: ChainOp, seq: bigint): Promise<OpResul
   }
 }
 
-/** 'rejected': the program refused it for good (seq not consumed). 'retry': unknown or temporary. */
-function classify(e: unknown, op: ChainOp, programId: string): { verdict: 'rejected' | 'retry'; text: string } {
+const SYSTEM_PROGRAM = '11111111111111111111111111111111';
+
+/**
+ * 'rejected': the program refused the operation for good (the number was not consumed).
+ * 'retry': unknown or temporary; the operation stays where it is and is tried again.
+ */
+export function classify(e: unknown, kind: string, programId: string): { verdict: 'rejected' | 'retry'; text: string } {
   if (!(e instanceof PodiumProgramError)) return { verdict: 'retry', text: e instanceof Error ? e.message : String(e) };
   if (e.code) {
     // The admin paused the program, or the chain's clock has not reached the period end yet: wait.
-    const wait = e.code === 'Paused' || e.code === 'BadSequence' || (e.code === 'PoolNotEnded' && op.kind === 'closePool');
+    const wait = e.code === 'Paused' || e.code === 'BadSequence' || (e.code === 'PoolNotEnded' && kind === 'closePool');
     return { verdict: wait ? 'retry' : 'rejected', text: e.code };
   }
+  // The System program failing means the operator cannot pay for a new account (out of SOL).
+  // That is ours to fix, not the player's: wait, loudly.
+  if (e.logs.some((l) => l.startsWith(`Program ${SYSTEM_PROGRAM} failed`))) return { verdict: 'retry', text: 'the operator could not pay for an account (is it out of SOL?)' };
   // Not one of the program's own errors. A custom code (Anchor's account checks, the token
   // program) or a failure inside our program's invocation is still a definite rejection.
   if (e.customCode !== undefined) return { verdict: 'rejected', text: `custom:${e.customCode}` };
@@ -221,7 +229,14 @@ async function reject(ctx: Ctx, op: ChainOp, error: string): Promise<void> {
 async function processOne(ctx: Ctx, chain: ChainService, op: ChainOp): Promise<'applied' | 'failed' | { stalled: string }> {
   const db = ctx.db;
   try {
+    // Registration is not part of the operation: if it cannot be done now, the operation waits.
     for (const w of walletsIn(op)) await chain.ensureRegistered(w);
+  } catch (e) {
+    const text = 'could not register a wallet: ' + (e instanceof Error ? e.message : String(e));
+    await db.chainOp.update({ where: { id: op.id }, data: { error: text.slice(0, 500) } }).catch(() => undefined);
+    return { stalled: `${op.kind} #${op.id}: ${text}` };
+  }
+  try {
     const onChain = await chain.operator.opSeq();
     let seq = op.status === 'sent' ? op.seq : null;
     if (seq !== null) {
@@ -245,7 +260,7 @@ async function processOne(ctx: Ctx, chain: ChainService, op: ChainOp): Promise<'
     await db.chainOp.update({ where: { id: op.id }, data: { status: 'applied', signature: res.signature, error: null } });
     return 'applied';
   } catch (e) {
-    const c = classify(e, op, chain.programId.toBase58());
+    const c = classify(e, op.kind, chain.programId.toBase58());
     if (c.verdict === 'rejected') {
       await reject(ctx, op, c.text);
       return 'failed';

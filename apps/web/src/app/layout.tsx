@@ -4,8 +4,9 @@ import '@fontsource-variable/instrument-sans/wght.css';
 import '@/styles/prototype.css';
 import '@/styles/app.css';
 import { BRAND } from '@podium/shared';
-import type { MeResponse } from '@podium/shared';
+import type { ChainConfigResponse, MeResponse } from '@podium/shared';
 import { SessionProvider } from '@/components/Session';
+import { CHAIN_ON } from '@/lib/chain';
 import { publicUrl, serverGet } from '@/lib/server-api';
 
 const description = `${BRAND.line}. Thirteen skill games, weekly leaderboards and one-on-one duels, played with tChips: test chips with no value.`;
@@ -27,10 +28,14 @@ export const dynamic = 'force-dynamic';
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const me = await serverGet<MeResponse>('/me');
+  // Chain mode (devnet test token) is a build-time switch; with it off the API is not even asked.
+  const chain = CHAIN_ON ? await serverGet<ChainConfigResponse>('/chain/config') : null;
   return (
     <html lang="en">
       <body>
-        <SessionProvider initialMe={me}>{children}</SessionProvider>
+        <SessionProvider initialMe={me} initialChain={chain}>
+          {children}
+        </SessionProvider>
       </body>
     </html>
   );

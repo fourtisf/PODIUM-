@@ -19,7 +19,7 @@ const NAV: [href: string, label: string][] = [
 ];
 
 export function Header() {
-  const { me, refresh, patchUser, toast, fail } = useSession();
+  const { me, refresh, patchUser, toast, fail, chain, openWallet } = useSession();
   const pathname = usePathname() || '/';
   const [notesOn, setNotesOn] = useState(false);
   const [notes, setNotes] = useState<NotificationItem[] | null>(null);
@@ -111,9 +111,14 @@ export function Header() {
               {fmt(u?.balance ?? 0)}
             </b>
             <span>tChips</span>
-            <button onClick={refill} disabled={busy || !me?.canRefill}>
-              Refill
-            </button>
+            {__CHAIN__ && chain ? (
+              // Chain mode has no refill: the button opens the wallet sheet (deposit, withdraw, test tokens).
+              <button onClick={openWallet}>Wallet</button>
+            ) : (
+              <button onClick={refill} disabled={busy || !me?.canRefill}>
+                Refill
+              </button>
+            )}
           </div>
           <Link className="mechip" href="/profile" aria-label="Profile">
             <FramedAvatar id={u?.avatar ?? 0} frame={u?.frame ?? 'none'} size={30} />

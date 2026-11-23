@@ -7,12 +7,16 @@ import type {
   AuthResponse,
   BoardResponse,
   BoxOpenResponse,
+  ChainConfigResponse,
+  ChainStatusResponse,
   ChallengeResponse,
   CreateChallengeResponse,
   CreateDuelResponse,
   CsrfResponse,
   CupResponse,
+  DepositConfirmResponse,
   DuelsResponse,
+  FaucetResponse,
   FinishRunRequest,
   FinishRunResponse,
   GameKey,
@@ -31,6 +35,8 @@ import type {
   StartRunResponse,
   StreakClaimResponse,
   WalletNonceResponse,
+  WithdrawPrepareResponse,
+  WithdrawSubmitResponse,
 } from '@podium/shared';
 
 export class ApiFailure extends Error {
@@ -201,6 +207,15 @@ export function createClient(deps: ClientDeps) {
     // ---- notifications
     notifications: () => get<NotificationsResponse>('/notifications'),
     notificationsRead: () => post<OkResponse>('/notifications/read'),
+    // ---- devnet test token (only called while chain mode is on)
+    chainConfig: () => get<ChainConfigResponse>('/chain/config'),
+    chainStatus: () => get<ChainStatusResponse>('/chain/status'),
+    walletLink: (b: { address: string; signature: string }) => post<AuthResponse>('/auth/wallet/link', b),
+    /** The transaction signature is the idempotency key on the server. */
+    depositConfirm: (signature: string) => post<DepositConfirmResponse>('/chain/deposit/confirm', { signature }),
+    withdrawPrepare: (amount: number) => post<WithdrawPrepareResponse>('/chain/withdraw/prepare', { amount }, `withdraw:${amount}`),
+    withdrawSubmit: (withdrawId: string, signedTx: string) => post<WithdrawSubmitResponse>('/chain/withdraw/submit', { withdrawId, signedTx }),
+    faucet: () => post<FaucetResponse>('/chain/faucet'),
   };
 }
 

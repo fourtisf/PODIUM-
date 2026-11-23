@@ -724,7 +724,7 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
     return () => removeEventListener('keydown', k);
   }, [share]);
 
-  const cost = runCost(mode, session.me);
+  const cost = runCost(mode, session.me, !!session.chain);
   const pad = g.pad || 'lr';
   const padBtn = (k: 'l' | 'r' | 'a') => ({
     onPointerDown: (e: React.PointerEvent) => {

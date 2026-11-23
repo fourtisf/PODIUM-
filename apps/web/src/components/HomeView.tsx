@@ -238,7 +238,7 @@ export function HomeView({ games: initialGames, cup: initialCup, challenge }: { 
                     Ranked <b className="num">{ECONOMY.rankedEntry}</b>
                   </button>
                   <button className="btn alt" onClick={() => s.play(k, 'practice')} aria-label={`Practice ${g.name}`}>
-                    Practice <b className="num">{ECONOMY.practiceEntry}</b>
+                    Practice <b className="num">{__CHAIN__ && s.chain ? 'free' : ECONOMY.practiceEntry}</b>
                   </button>
                 </div>
               </div>

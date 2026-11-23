@@ -3,7 +3,7 @@
 // ledger balance of every user equals what the wallet holds on-chain.
 import { DUEL_STATE } from '@podium/chain';
 import {
-  DUEL_JOINER_TIMEOUT_HOURS, ECONOMY, REFERRAL, STREAK, duelFee, duelPayout, splitPool,
+  DUEL_JOINER_TIMEOUT_HOURS, ECONOMY, REFERRAL, STREAK, cupGame, duelFee, duelPayout, splitPool,
   type AuthResponse, type ChainStatusResponse, type CreateDuelResponse, type ShopBuyResponse, type ShopResponse, type StartRunResponse, type StreakClaimResponse,
 } from '@podium/shared';
 import bs58 from 'bs58';
@@ -13,7 +13,7 @@ import { chainDuelId, drainChainOps } from '../src/chain/outbox';
 import { logsOfProgram } from '../src/chain/rpc';
 import { closeDuePeriods } from '../src/services/close';
 import { expireDuels } from '../src/services/duels';
-import { weeklyPeriod } from '../src/services/periods';
+import { cupPeriod, weeklyPeriod } from '../src/services/periods';
 import { CHAIN_READY, assertParity, chainApp, deposit, drain, linkWallet, onChain, signMessage, walletUser, type ChainTest } from './chain-helpers';
 import { GAME, OTHER_GAME, distinctPlans, errCode, guest, ledgerCount, playRun, signUp, visitor, type Client } from './helpers';
 
@@ -196,6 +196,19 @@ describe.skipIf(!CHAIN_READY)('chain mode', () => {
     expect(done.map((o) => o.seq)).toEqual([...done.map((o) => o.seq)].sort((x, y) => Number(x! - y!)));
     // A replayed start request queues nothing new.
     expect(await t.ctx.db.chainOp.count({ where: { kind: 'enterPool' } })).toBe(3);
+  });
+
+  test('a Cup entry goes into the on-chain Cup pool with the five-place split', async () => {
+    const a = await walletUser(t, { deposit: 600 });
+    const game = cupGame(t.now());
+    const r = await a.post<StartRunResponse>('/runs', { game, mode: 'cup' });
+    expect(r.body).toMatchObject({ entry: ECONOMY.cupEntry, balance: 600 - ECONOMY.cupEntry });
+    await drain(t);
+    const cup = await cupPeriod(t.ctx.db, t.now());
+    const pool = (await t.world.pool(1, game, Math.floor(+cup.startAt / 1000)))!;
+    expect(pool).toMatchObject({ kind: 1, total: chips(cup.pool), entries: 1, entry: chips(ECONOMY.cupEntry), winners: 5, closed: false });
+    expect(pool.splitBps).toEqual([4000, 2500, 1500, 1200, 800]);
+    expect(await onChain(t, a)).toBe(600 - ECONOMY.cupEntry);
   });
 
   test('the weekly close pays three wallets on-chain exactly what the ledger paid, and the treasury gets the fee', async () => {

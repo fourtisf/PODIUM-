@@ -35,7 +35,7 @@ export function DuelsView({ initial }: { initial: DuelsResponse | null }) {
   const find = async () => {
     if (busy || !s.needAccount()) return;
     if (u && u.balance < stake) {
-      s.toast(`Not enough tChips. Refill opens once you are under ${ECONOMY.refillUnder}.`);
+      s.toast(s.lowText());
       return;
     }
     setBusy(true);

@@ -3,6 +3,8 @@
 # One-time setup it does NOT do (see HANDOFF.md section 9): install Node 20+, pnpm, PostgreSQL 15+,
 # Redis 7, Nginx, PM2 and certbot; create the database and its user; write .env from .env.example;
 # open ports 80 and 443 only; install the podium-app block from deploy/nginx.conf and run certbot.
+# Phase 3 (devnet test token, off by default): see deploy/phase3-devnet.md for the order. This script
+# is still the build-and-restart step; NEXT_PUBLIC_* values are read at build time.
 set -euo pipefail
 [ -f .env ] || { echo "Create .env from .env.example first."; exit 1; }
 
