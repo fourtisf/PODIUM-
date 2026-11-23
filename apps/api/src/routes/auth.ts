@@ -4,7 +4,8 @@ import { randomInt } from 'node:crypto';
 import { BRAND, type AuthResponse, type CsrfResponse, type OkResponse, type WalletNonceResponse } from '@podium/shared';
 import type { User } from '@prisma/client';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { getAddress, isAddress, verifyMessage } from 'viem';
+import bs58 from 'bs58';
+import { createPublicKey, verify as edVerify } from 'node:crypto';
 import { z } from 'zod';
 import { AUTH } from '../config';
 import { AppError, invalid } from '../errors';
@@ -19,7 +20,30 @@ import { parse } from './_util';
 const email = z.string().trim().toLowerCase().email().max(254);
 const name = z.string().min(1).max(40).optional();
 const ref = z.string().trim().min(4).max(16).optional();
-const address = z.string().refine((a) => isAddress(a), 'not a wallet address');
+/** Decodes base58 to exactly `len` bytes, or null. */
+function b58(v: string, len: number): Buffer | null {
+  try {
+    const b = Buffer.from(bs58.decode(v));
+    return b.length === len ? b : null;
+  } catch {
+    return null;
+  }
+}
+// A Solana address is a base58 ed25519 public key (32 bytes). It is case-sensitive.
+const address = z.string().min(32).max(44).refine((a) => b58(a, 32) !== null, 'not a Solana wallet address');
+const ED25519_SPKI = Buffer.from('302a300506032b6570032100', 'hex');
+
+/** True when `signature` (base58, 64 bytes) is the wallet's ed25519 signature of `message`. Identity only. */
+export function verifySolanaSignature(addr: string, message: string, signature: string): boolean {
+  const key = b58(addr, 32), sig = b58(signature, 64);
+  if (!key || !sig) return false;
+  try {
+    const pub = createPublicKey({ key: Buffer.concat([ED25519_SPKI, key]), format: 'der', type: 'spki' });
+    return edVerify(null, Buffer.from(message, 'utf8'), pub, sig);
+  } catch {
+    return false;
+  }
+}
 
 const GOOGLE = {
   auth: 'https://accounts.google.com/o/oauth2/v2/auth',
@@ -149,30 +173,25 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ---------------------------------------------------------------- wallet (identity only)
-  const nonceKey = (a: string): string => 'wnonce:' + a.toLowerCase();
+  const nonceKey = (a: string): string => 'wnonce:' + a;
 
   app.post('/auth/wallet/nonce', async (req): Promise<WalletNonceResponse> => {
     const body = parse(z.object({ address }), req.body);
     await rateLimit(ctx, 'authPerIp', req.ip);
     const nonce = token(16);
     await ctx.redis.set(nonceKey(body.address), nonce, 'EX', AUTH.nonceTtlSeconds);
-    return { message: walletMessage(getAddress(body.address), nonce), nonce };
+    return { message: walletMessage(body.address, nonce), nonce };
   });
 
   app.post('/auth/wallet/verify', async (req, reply): Promise<AuthResponse> => {
-    const body = parse(z.object({ address, signature: z.string().regex(/^0x[0-9a-fA-F]{130}$/), adult: z.boolean().optional(), name, ref }), req.body);
+    const body = parse(z.object({ address, signature: z.string().min(64).max(100), adult: z.boolean().optional(), name, ref }), req.body);
     await rateLimit(ctx, 'authPerIp', req.ip);
     const nonce = await ctx.redis.get(nonceKey(body.address));
     if (!nonce) throw invalid('Ask for a new message to sign.');
-    const addr = getAddress(body.address);
-    let ok = false;
-    try {
-      ok = await verifyMessage({ address: addr, message: walletMessage(addr, nonce), signature: body.signature as `0x${string}` });
-    } catch {
-      ok = false;
-    }
+    const addr = body.address;
+    const ok = verifySolanaSignature(addr, walletMessage(addr, nonce), body.signature);
     if (!ok) throw invalid('That signature does not match the wallet.');
-    const res = await signInWith(req, reply, { wallet: addr.toLowerCase() }, { adult: body.adult === true, requireAdult: true, name: body.name, ref: body.ref });
+    const res = await signInWith(req, reply, { wallet: addr }, { adult: body.adult === true, requireAdult: true, name: body.name, ref: body.ref });
     await ctx.redis.del(nonceKey(body.address));
     return res;
   });

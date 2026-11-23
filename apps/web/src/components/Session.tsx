@@ -3,6 +3,7 @@
 // from anywhere (welcome, sign in, age gate, pre-game, box reveal, challenge).
 // The server is the authority: after every mutation the caller refreshes /me from here.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import bs58 from 'bs58';
 import { usePathname, useRouter } from 'next/navigation';
 import { BRAND, ECONOMY, GAMES, GAME_KEYS, cleanName, fmt, hashName, nameErrorText, validateName } from '@podium/shared';
 import type { ChallengeResponse, GameKey, MeResponse, MeUser, RunMode } from '@podium/shared';
@@ -381,8 +382,15 @@ function WelcomeSheet({ onDone, toast }: { onDone(): Promise<void>; toast(t: str
 const numberWord = (n: number): string => (n === 13 ? 'Thirteen' : String(n));
 
 // ---------------------------------------------------------------- sign in
-interface Eip1193 {
-  request(args: { method: string; params?: unknown[] }): Promise<unknown>;
+/** The part of a Solana wallet provider (Phantom, Solflare, Backpack) used here: connect and sign a text message. */
+interface SolanaProvider {
+  connect(): Promise<{ publicKey: { toBase58(): string } }>;
+  signMessage(message: Uint8Array, display?: 'utf8'): Promise<{ signature: Uint8Array }>;
+}
+function solanaProvider(): SolanaProvider | null {
+  const w = window as unknown as { phantom?: { solana?: SolanaProvider }; solana?: SolanaProvider; solflare?: SolanaProvider };
+  const p = w.phantom?.solana ?? w.solana ?? w.solflare ?? null;
+  return p && typeof p.signMessage === 'function' ? p : null;
 }
 
 function SignInSheet({ onClose, onDone, toast, storedRef }: { onClose(): void; onDone(): Promise<void>; toast(t: string): void; storedRef(): string | undefined }) {
@@ -396,7 +404,7 @@ function SignInSheet({ onClose, onDone, toast, storedRef }: { onClose(): void; o
   useEffect(() => {
     // The name picked in the welcome sheet, if any.
     setWanted(stored(NAME_KEY) ?? '');
-    setWallet(typeof (window as unknown as { ethereum?: Eip1193 }).ethereum?.request === 'function');
+    setWallet(solanaProvider() !== null);
     const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     addEventListener('keydown', k);
     return () => removeEventListener('keydown', k);
@@ -452,16 +460,15 @@ function SignInSheet({ onClose, onDone, toast, storedRef }: { onClose(): void; o
   const withWallet = () =>
     run(async () => {
       if (!ageOk()) return;
-      const eth = (window as unknown as { ethereum?: Eip1193 }).ethereum;
-      if (!eth) return;
+      const sol = solanaProvider();
+      if (!sol) return;
       let address: string, signature: string;
       try {
-        const accounts = (await eth.request({ method: 'eth_requestAccounts' })) as string[];
-        address = accounts[0] ?? '';
-        if (!address) throw new Error('no account');
+        address = (await sol.connect()).publicKey.toBase58();
         const { message } = await api.walletNonce(address);
         // Identity only: a signed text message, never a transaction.
-        signature = (await eth.request({ method: 'personal_sign', params: [message, address] })) as string;
+        const signed = await sol.signMessage(new TextEncoder().encode(message), 'utf8');
+        signature = bs58.encode(signed.signature);
       } catch (e) {
         if (e instanceof ApiFailure) throw e;
         toast('The wallet did not sign the message.');

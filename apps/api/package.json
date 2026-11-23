@@ -17,11 +17,11 @@
     "@podium/games": "workspace:*",
     "@podium/shared": "workspace:*",
     "@prisma/client": "^6.19.3",
+    "bs58": "^6.0.0",
     "dotenv": "^16.6.1",
     "fastify": "^5.12.8",
     "ioredis": "^5.11.1",
     "nodemailer": "^6.10.1",
-    "viem": "^2.58.4",
     "zod": "^3.25.76"
   },
   "devDependencies": {

@@ -1,5 +1,6 @@
 import { ECONOMY, REFERRAL, type AuthResponse, type MeResponse, type WalletNonceResponse } from '@podium/shared';
-import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
+import bs58 from 'bs58';
+import { generateKeyPairSync, sign as edSign } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import type { HttpFetch } from '../src/ctx';
 import { Client, errCode, freshApp, guest, ledgerCount, makeApp, signUp, visitor, type TestApp } from './helpers';
@@ -140,26 +141,35 @@ describe('email code', () => {
   });
 });
 
+/** A throwaway Solana wallet: base58 address plus a signer returning base58 signatures. */
+function solanaWallet(): { address: string; sign(message: string): string } {
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const raw = publicKey.export({ format: 'der', type: 'spki' }).subarray(-32);
+  return { address: bs58.encode(raw), sign: (m) => bs58.encode(edSign(null, Buffer.from(m, 'utf8'), privateKey)) };
+}
+
 describe('wallet (identity only)', () => {
   test('nonce, signature, sign-in; a used nonce cannot be replayed', async () => {
-    const account = privateKeyToAccount(generatePrivateKey());
+    const account = solanaWallet();
     const c = await visitor(t);
     const n = await c.post<WalletNonceResponse>('/auth/wallet/nonce', { address: account.address });
     expect(n.status).toBe(200);
     expect(n.body.message).toContain(n.body.nonce);
     expect(n.body.message).toContain('does not send a transaction');
-    const signature = await account.signMessage({ message: n.body.message });
-    const other = await privateKeyToAccount(generatePrivateKey()).signMessage({ message: n.body.message });
+    const signature = account.sign(n.body.message);
+    const other = solanaWallet().sign(n.body.message);
     expect((await c.post('/auth/wallet/verify', { address: account.address, signature: other, adult: true })).status).toBe(400);
+    expect((await c.post('/auth/wallet/verify', { address: account.address, signature: account.sign(n.body.message + 'x'), adult: true })).status).toBe(400);
     expect(errCode(await c.post('/auth/wallet/verify', { address: account.address, signature, adult: false }))).toBe('not_adult');
     const ok = await c.post<AuthResponse>('/auth/wallet/verify', { address: account.address, signature, adult: true, name: 'Wally' });
     expect(ok.status).toBe(200);
     expect(ok.body).toMatchObject({ guest: false, adult: true, created: true, name: 'Wally' });
-    expect((await t.ctx.db.user.findUniqueOrThrow({ where: { id: ok.body.userId } })).wallet).toBe(account.address.toLowerCase());
+    expect((await t.ctx.db.user.findUniqueOrThrow({ where: { id: ok.body.userId } })).wallet).toBe(account.address);
     const replay = await c.post('/auth/wallet/verify', { address: account.address, signature, adult: true });
     expect(replay.status).toBe(400);
-    expect(await t.ctx.db.user.count({ where: { wallet: account.address.toLowerCase() } })).toBe(1);
+    expect(await t.ctx.db.user.count({ where: { wallet: account.address } })).toBe(1);
     expect((await c.post('/auth/wallet/nonce', { address: 'not-an-address' })).status).toBe(400);
+    expect((await c.post('/auth/wallet/nonce', { address: '0x52908400098527886E0F7030069857D2E4169EE7' })).status).toBe(400);
   });
 });
 

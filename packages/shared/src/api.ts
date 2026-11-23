@@ -77,15 +77,17 @@ export interface EmailVerifyBody {
   ref?: string;
 }
 export interface WalletNonceBody {
+  /** Solana address (base58 public key). */
   address: string;
 }
 export interface WalletNonceResponse {
-  /** The exact text to sign with personal_sign. Signing proves identity only; no transaction is made. */
+  /** The exact text to sign with the Solana wallet's signMessage. Signing proves identity only; no transaction is made. */
   message: string;
   nonce: string;
 }
 export interface WalletVerifyBody {
   address: string;
+  /** base58 ed25519 signature of the nonce message. */
   signature: string;
   adult: boolean;
   name?: string;
