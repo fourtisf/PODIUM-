@@ -1,7 +1,14 @@
 // Runs the BUILT program (programs/podium/target/deploy/podium.so) in-process with LiteSVM.
 // Skipped, with a message, when the .so has not been built.
 import { ECONOMY, duelFee, duelPayout, splitPool } from '@podium/shared';
-import { createAssociatedTokenAccountIdempotentInstruction, createTransferInstruction } from '@solana/spl-token';
+import {
+  MINT_SIZE,
+  TOKEN_PROGRAM_ID,
+  createAssociatedTokenAccountIdempotentInstruction,
+  createInitializeMint2Instruction,
+  createTransferInstruction,
+  getAssociatedTokenAddressSync,
+} from '@solana/spl-token';
 import { Keypair, SystemProgram, Transaction, TransactionInstruction } from '@solana/web3.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -90,6 +97,22 @@ describe.skipIf(!PROGRAM_BUILT)(PROGRAM_BUILT ? 'podium program' : `podium progr
       await expect(fresh.send([fresh.initializeIx({ feeBps: 10_001 })], [fresh.admin])).rejects.toMatchObject(code('InvalidParam'));
       await expect(fresh.send([fresh.initializeIx({ unit: 0 })], [fresh.admin])).rejects.toMatchObject(code('InvalidParam'));
       await expect(fresh.send([fresh.initializeIx({ vestSeconds: -1 })], [fresh.admin])).rejects.toMatchObject(code('InvalidParam'));
+      // The vault itself cannot be the treasury wallet.
+      await expect(fresh.send([fresh.initializeIx({ treasuryWallet: vaultPda(fresh.programId) })], [fresh.admin])).rejects.toMatchObject(NOT_INITIALIZED);
+      // A mint with a freeze authority is refused.
+      const frozenMint = Keypair.generate();
+      await fresh.send(
+        [
+          SystemProgram.createAccount({ fromPubkey: fresh.admin.publicKey, newAccountPubkey: frozenMint.publicKey, lamports: 10_000_000, space: MINT_SIZE, programId: TOKEN_PROGRAM_ID }),
+          createInitializeMint2Instruction(frozenMint.publicKey, 6, fresh.admin.publicKey, fresh.admin.publicKey),
+        ],
+        [fresh.admin, frozenMint],
+      );
+      const frozenTreasury = getAssociatedTokenAddressSync(frozenMint.publicKey, fresh.admin.publicKey);
+      await fresh.send([createAssociatedTokenAccountIdempotentInstruction(fresh.admin.publicKey, frozenTreasury, fresh.admin.publicKey, frozenMint.publicKey)], [fresh.admin]);
+      await expect(fresh.send([fresh.initializeIx({ mint: frozenMint.publicKey, treasuryWallet: frozenTreasury })], [fresh.admin])).rejects.toMatchObject(code('InvalidParam'));
+      // The treasury wallet must be a token account of the mint.
+      await expect(fresh.send([fresh.initializeIx({ treasuryWallet: frozenTreasury })], [fresh.admin])).rejects.toThrow(/Custom\(2014\)/);
       await fresh.initialize();
       w = fresh;
     });

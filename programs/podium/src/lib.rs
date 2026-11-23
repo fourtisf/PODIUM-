@@ -93,6 +93,10 @@ pub mod podium {
     ) -> Result<()> {
         require!(fee_bps as u64 <= BPS && burn_bps as u64 <= BPS, PodiumError::InvalidParam);
         require!(vest_seconds >= 0 && unit > 0, PodiumError::InvalidParam);
+        // A freeze authority could freeze the vault and lock every balance.
+        require!(ctx.accounts.mint.freeze_authority.is_none(), PodiumError::InvalidParam);
+        // Fee withdrawals must leave the vault, not loop back into it.
+        require!(ctx.accounts.treasury_wallet.key() != ctx.accounts.vault.key(), PodiumError::BadAccount);
         let c = &mut ctx.accounts.config;
         c.admin = ctx.accounts.admin.key();
         c.operator = operator;
