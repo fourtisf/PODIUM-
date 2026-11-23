@@ -1,0 +1,172 @@
+// Starting schema for Podium, Phase 1. Adjust as the build needs, through migrations.
+// All amounts are whole tChips. tChips have no value in this phase.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  email         String?  @unique
+  googleId      String?  @unique
+  wallet        String?  @unique // identity only in Phase 1
+  name          String   @unique
+  avatar        Int      @default(0)
+  frame         String   @default("none")
+  balance       Int      @default(2000)
+  xp            Int      @default(0)
+  boxes         Int      @default(1)
+  freePractice  Int      @default(3)
+  streak        Int      @default(0)
+  streakDay     Int      @default(0) // day number of the last claim
+  refCode       String   @unique
+  referredById  String?
+  referredBy    User?    @relation("Referral", fields: [referredById], references: [id])
+  referrals     User[]   @relation("Referral")
+  adult         Boolean  @default(false) // confirmed 18 or over at sign-up
+
+  items         Item[]
+  runs          Run[]
+  ledger        Ledger[]
+  missions      MissionProgress[]
+  seasonClaims  SeasonClaim[]
+  notifications Notification[]
+  scores        Score[]
+}
+
+model Item {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+  kind   String // "avatar" | "frame"
+  ref    String // avatar number or frame key
+  @@unique([userId, kind, ref])
+}
+
+// Every change to a balance is one row here. balance on User is the running total.
+model Ledger {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  amount    Int      // positive in, negative out
+  reason    String   // "entry" | "payout" | "duel" | "mission" | "streak" | "season" | "box" | "shop" | "refill" | "referral"
+  ref       String?  // run id, period id, item key
+  idemKey   String   @unique // makes a replayed request a no-op
+  @@index([userId, createdAt])
+}
+
+model Period {
+  id      String   @id @default(cuid())
+  kind    String   // "weekly" | "cup"
+  game    String
+  startAt DateTime
+  endAt   DateTime
+  pool    Int      @default(0)
+  fee     Int      @default(0)
+  closed  Boolean  @default(false)
+  scores  Score[]
+  @@unique([kind, game, startAt])
+}
+
+// Best score per player per period.
+model Score {
+  id        String   @id @default(cuid())
+  periodId  String
+  period    Period   @relation(fields: [periodId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  score     Int
+  setAt     DateTime @default(now()) // tie-break: earlier wins
+  runId     String
+  payout    Int      @default(0)
+  @@unique([periodId, userId])
+  @@index([periodId, score])
+}
+
+model Run {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  finishedAt  DateTime?
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  game        String
+  gameVersion Int       @default(1)
+  mode        String    // "ranked" | "practice" | "cup" | "duel" | "challenge"
+  seed        Int
+  entry       Int
+  score       Int?
+  durationMs  Int?
+  inputLog    Bytes?    // kept from Phase 1 so Phase 2 can replay history
+  status      String    @default("open") // "open" | "finished" | "rejected" | "flagged"
+  duelId      String?
+  duel        Duel?     @relation(fields: [duelId], references: [id])
+  @@index([userId, createdAt])
+}
+
+model Duel {
+  id         String    @id @default(cuid())
+  createdAt  DateTime  @default(now())
+  game       String
+  stake      Int
+  status     String    @default("waiting") // "waiting" | "matched" | "settled" | "refunded"
+  creatorId  String
+  joinerId   String?
+  winnerId   String?
+  expiresAt  DateTime
+  runs       Run[]
+  @@index([game, stake, status])
+}
+
+model Challenge {
+  code      String   @id // short code used in the share link
+  createdAt DateTime @default(now())
+  userId    String
+  game      String
+  score     Int
+  runId     String
+}
+
+model MissionProgress {
+  id       String  @id @default(cuid())
+  userId   String
+  user     User    @relation(fields: [userId], references: [id])
+  day      Int
+  mission  String
+  progress Int     @default(0)
+  claimed  Boolean @default(false)
+  meta     Json?   // e.g. the set of games played, for "play 2 different games"
+  @@unique([userId, day, mission])
+}
+
+model SeasonClaim {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+  season Int
+  tier   Int
+  @@unique([userId, season, tier])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  kind      String
+  body      String
+  read      Boolean  @default(false)
+  @@index([userId, read, createdAt])
+}
+
+// Running totals shown on the site.
+model Counter {
+  key   String @id // "burned", "emissions:<day>"
+  value Int    @default(0)
+}
