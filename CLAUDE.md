@@ -9,6 +9,7 @@ Podium: skill games with weekly prize pools, duels, missions and a shop. The app
 ## Hard rules
 
 1. **Test chips only.** The currency is tChips and has no value. Do not write any deposit, withdrawal, payment, token-transfer or on-chain payout code. Phase 3 in `HANDOFF.md` is blocked until the owner says in writing that it is unblocked. If a task seems to need it, stop and ask.
+   - **Owner decision, 2026-11-23:** Phase 3 is unblocked for **Solana devnet only**, with a valueless test token ("testnet first, not mainnet"). Mainnet stays blocked until the owner confirms the written legal opinion and a contract audit. Code must refuse `mainnet-beta`, and token features sit behind `CHAIN_MODE` (default `off`, which keeps tChips).
 2. **The server is the authority.** Balances, scores, rewards, items and leaderboards are computed and stored on the server. Never trust a value the browser sends for any of them.
 3. **Money-like operations are idempotent.** Entry charges, payouts, claims and purchases run in a database transaction and carry an idempotency key. Replaying a request must not pay or charge twice.
 4. **Keep the design.** Match the prototype's layout, type, colours, copy and in-game flow. Lift CSS and game constants from it. Do not restyle or rewrite copy unless asked.
