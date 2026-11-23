@@ -168,3 +168,7 @@ export const ANTI_ABUSE = {
   /** A run must be finished within this long of being started. */
   sessionSeconds: 2 * 3600,
 } as const;
+
+// ---------------------------------------------------------------- duel timing
+/** A joiner who matched a duel but has not finished a run after this long forfeits to the creator. */
+export const DUEL_JOINER_TIMEOUT_HOURS = 2;

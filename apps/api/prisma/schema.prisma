@@ -153,6 +153,7 @@ model Run {
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
+  @@index([duelId])
 }
 
 model Duel {
@@ -166,6 +167,7 @@ model Duel {
   creatorScore Int?
   joinerScore  Int?
   creatorAt    DateTime? // when the creator's score was set (tie-break: earlier wins)
+  matchedAt    DateTime? // when a joiner matched; the joiner forfeits if no run is finished in time
   winnerId     String?
   settledAt    DateTime?
   expiresAt    DateTime
@@ -183,7 +185,7 @@ model Challenge {
   userId    String
   game      String
   score     Int
-  runId     String
+  runId     String   @unique // one challenge per run
 }
 
 model MissionProgress {

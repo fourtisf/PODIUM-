@@ -298,7 +298,17 @@ export const breaker: GameDef<BreakerState> = {
   key: 'breaker',
   version: 1,
   ownFx: true,
-  maxScorePerSecond: 10,
+  // A brick is worth 10 x min(8, 1 + combo) <= 80 and clearing level L adds 100 x L, so a level yields at most
+  // 80 x bricks + 100 x L (bricks <= 72). The least time a level can take:
+  // - 0.2 s before the ball can be launched (stuck must drop from 1 below 0.8),
+  // - the flight from the paddle (y 575) to the lowest row: (422 - 26 x rows) px at no more than 325 + 16 x L px/s,
+  // - one brick contact per collision sub-step (3 per frame = 180 per second) for the single ball; a multi-ball
+  //   capsule needs over 1.6 s to fall to the paddle and capsules are wiped on every level change.
+  // That is 0.8 to 1.3 s per level, and the worst score/time ratio over levels 1..30 is 8 700 per second
+  // (level 30: 7 800 points in 0.90 s); the cumulative ratio stays below 9 000 up to about level 60.
+  // There is no true constant: the level bonus and the ball speed both grow with the level without limit,
+  // so this bound is only valid for runs up to about level 60 (tracking bots reach level 15 in 30 minutes).
+  maxScorePerSecond: 9000,
   scoreSlack: 0,
   init,
   update,

@@ -1,0 +1,38 @@
+{
+  "name": "@podium/api",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "typecheck": "prisma generate && tsc --noEmit",
+    "test": "prisma generate && vitest run",
+    "build": "prisma generate && tsup",
+    "start": "node dist/server.js",
+    "migrate": "prisma migrate deploy"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.1.5",
+    "@fastify/websocket": "^11.3.7",
+    "@podium/games": "workspace:*",
+    "@podium/shared": "workspace:*",
+    "@prisma/client": "^6.19.3",
+    "dotenv": "^16.6.1",
+    "fastify": "^5.12.8",
+    "ioredis": "^5.11.1",
+    "nodemailer": "^6.10.1",
+    "viem": "^2.58.4",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "@types/nodemailer": "^8.0.2",
+    "@types/ws": "^8.18.2",
+    "prisma": "^6.19.3",
+    "tsup": "^9.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9",
+    "ws": "^8.23.0"
+  }
+}
