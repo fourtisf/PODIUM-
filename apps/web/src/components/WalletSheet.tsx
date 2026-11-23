@@ -9,7 +9,8 @@ import type { ChainConfigResponse, ChainStatusResponse, MeResponse } from '@podi
 import { api, ApiFailure, errorText } from '@/lib/api';
 import { durationText, shortAddress } from '@/lib/chain';
 import type { TxProvider } from '@/lib/chain-tx';
-import { solanaProvider } from './Session';
+import { solanaProvider } from '@/lib/wallets';
+import WalletPicker from './WalletPicker';
 
 const txLib = () => import('@/lib/chain-tx');
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -36,6 +37,7 @@ export default function WalletSheet({ chain, me, onClose, refresh, toast, openSi
   const [st, setSt] = useState<ChainStatusResponse | null>(null);
   const [blocked, setBlocked] = useState(chain.blocked);
   const [dep, setDep] = useState('');
+  const [picking, setPicking] = useState(false);
   const [wd, setWd] = useState('');
   const [busy, setBusy] = useState('');
   const [note, setNote] = useState('');
@@ -207,7 +209,7 @@ export default function WalletSheet({ chain, me, onClose, refresh, toast, openSi
         ) : !wallet ? (
           <>
             <p className="sub">Link a wallet to this account. You sign a short message to prove it is yours; no transaction is made.</p>
-            <button className="btn go" onClick={link} disabled={!!busy}>
+            <button className="btn go" onClick={() => setPicking(true)} disabled={!!busy}>
               Link a wallet
             </button>
           </>
@@ -275,6 +277,15 @@ export default function WalletSheet({ chain, me, onClose, refresh, toast, openSi
           This is a test token on a test network. It has no value and cannot be exchanged for anything. Reward tChips can be played at once and withdrawn after {durationText(chain.vestSeconds)}.
         </p>
       </div>
+      {picking && (
+        <WalletPicker
+          onClose={() => setPicking(false)}
+          onPick={() => {
+            setPicking(false);
+            void link();
+          }}
+        />
+      )}
     </div>
   );
 }

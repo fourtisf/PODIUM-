@@ -4,6 +4,8 @@
 // The server is the authority: after every mutation the caller refreshes /me from here.
 import { Suspense, createContext, lazy, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import bs58 from 'bs58';
+import { solanaProvider } from '@/lib/wallets';
+import WalletPicker from './WalletPicker';
 import { usePathname, useRouter } from 'next/navigation';
 import { BRAND, ECONOMY, GAMES, GAME_KEYS, cleanName, fmt, hashName, nameErrorText, validateName } from '@podium/shared';
 import type { ChainConfigResponse, ChallengeResponse, GameKey, MeResponse, MeUser, RunMode } from '@podium/shared';
@@ -327,7 +329,7 @@ function GameSheet({ game, pool, me, chainOn, onClose, onPlay }: { game: GameKey
   const g = GAMES[game];
   const practice = runCost('practice', me, chainOn);
   useEffect(() => {
-    const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const k = (e: KeyboardEvent) => e.key === 'Escape' && !document.getElementById('walletpick') && onClose();
     addEventListener('keydown', k);
     return () => removeEventListener('keydown', k);
   }, [onClose]);
@@ -432,16 +434,7 @@ function WelcomeSheet({ onDone, toast }: { onDone(): Promise<void>; toast(t: str
 const numberWord = (n: number): string => (n === 13 ? 'Thirteen' : String(n));
 
 // ---------------------------------------------------------------- sign in
-/** The part of a Solana wallet provider (Phantom, Solflare, Backpack) used here: connect and sign a text message. */
-export interface SolanaProvider {
-  connect(): Promise<{ publicKey: { toBase58(): string } }>;
-  signMessage(message: Uint8Array, display?: 'utf8'): Promise<{ signature: Uint8Array }>;
-}
-export function solanaProvider(): SolanaProvider | null {
-  const w = window as unknown as { phantom?: { solana?: SolanaProvider }; solana?: SolanaProvider; solflare?: SolanaProvider };
-  const p = w.phantom?.solana ?? w.solana ?? w.solflare ?? null;
-  return p && typeof p.signMessage === 'function' ? p : null;
-}
+export { solanaProvider, type SolanaProvider } from '@/lib/wallets';
 
 function SignInSheet({ onClose, onDone, toast, storedRef, chainOn }: { onClose(): void; onDone(): Promise<void>; toast(t: string): void; storedRef(): string | undefined; chainOn: boolean }) {
   const [email, setEmail] = useState('');
@@ -449,12 +442,11 @@ function SignInSheet({ onClose, onDone, toast, storedRef, chainOn }: { onClose()
   const [sent, setSent] = useState(false);
   const [adult, setAdult] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [wallet, setWallet] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [wanted, setWanted] = useState('');
   useEffect(() => {
     // The name picked in the welcome sheet, if any.
     setWanted(stored(NAME_KEY) ?? '');
-    setWallet(solanaProvider() !== null);
     const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     addEventListener('keydown', k);
     return () => removeEventListener('keydown', k);
@@ -582,13 +574,18 @@ function SignInSheet({ onClose, onDone, toast, storedRef, chainOn }: { onClose()
           Continue with Google
         </a>
   );
-  const walletButton = wallet && (
-          <button className="btn alt" onClick={withWallet} disabled={busy}>
+  // Age first, so the picker never opens only to be refused afterwards.
+  const pickWallet = () => {
+    if (ageOk()) setPicking(true);
+  };
+  const walletButton = (
+          <button className="btn alt" onClick={pickWallet} disabled={busy}>
             Continue with wallet
           </button>
           );
 
   return (
+    <>
     <div className="scrim on" id="signin" role="dialog" aria-modal="true" aria-label="Sign in" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="sheet" style={{ position: 'relative' }}>
         <button className="x" aria-label="Close" onClick={onClose}>
@@ -600,15 +597,9 @@ function SignInSheet({ onClose, onDone, toast, storedRef, chainOn }: { onClose()
           <>
             {/* Chain mode leads with the wallet: it is the account and it holds the test token. */}
             {nameAndAge}
-            {wallet ? (
-              <button className="btn go" onClick={withWallet} disabled={busy}>
-                Continue with wallet
-              </button>
-            ) : (
-              <p className="fine" style={{ margin: '0 0 12px' }}>
-                No Solana wallet found in this browser. Install one (for example Phantom), switch it to Devnet and reload, or sign in below and link a wallet later.
-              </p>
-            )}
+            <button className="btn go" onClick={pickWallet} disabled={busy}>
+              Continue with wallet
+            </button>
             <div className="lbl" style={{ marginTop: 18 }}>
               Or sign in by email and link a wallet afterwards
             </div>
@@ -628,6 +619,16 @@ function SignInSheet({ onClose, onDone, toast, storedRef, chainOn }: { onClose()
         )}
       </div>
     </div>
+    {picking && (
+      <WalletPicker
+        onClose={() => setPicking(false)}
+        onPick={() => {
+          setPicking(false);
+          void withWallet();
+        }}
+      />
+    )}
+    </>
   );
 }
 

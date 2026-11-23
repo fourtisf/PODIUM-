@@ -64,3 +64,11 @@ h1 .tag{vertical-align:middle;margin-left:12px;font-family:var(--body);letter-sp
   /* The prototype's nav scrolls sideways on phones; keep the scrollbar out of the way. */
   .nav{scrollbar-width:none}.nav::-webkit-scrollbar{display:none}
 }
+
+/* wallet picker */
+.wlist{display:flex;flex-direction:column}
+.wopt{text-decoration:none;color:inherit;cursor:pointer}
+.wopt .wname{display:flex;align-items:center;gap:12px}
+.wopt img,.wopt .wgen{width:32px;height:32px;border-radius:9px;flex:none;display:block}
+.wopt .wgen{display:grid;place-items:center;background:var(--ink);color:#fff}
+.wopt small{font-size:12.5px;font-weight:600;opacity:.7}
