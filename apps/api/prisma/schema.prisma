@@ -1,0 +1,250 @@
+// Podium database. Started from docs/schema.prisma and extended for Phase 1 and Phase 2.
+// All amounts are whole tChips. tChips have no value. Change this file only through migrations.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  guest         Boolean  @default(true) // true until the player signs in with email, Google or a wallet
+  email         String?  @unique
+  googleId      String?  @unique
+  wallet        String?  @unique // identity only
+  name          String   @unique
+  nameLower     String   @unique // case-insensitive uniqueness
+  avatar        Int      @default(0)
+  frame         String   @default("none")
+  balance       Int      @default(2000)
+  xp            Int      @default(0)
+  boxes         Int      @default(1)
+  freePractice  Int      @default(3)
+  streak        Int      @default(0)
+  streakDay     Int      @default(0) // UTC day number of the last claim
+  refCode       String   @unique
+  referredById  String?
+  referredBy    User?    @relation("Referral", fields: [referredById], references: [id])
+  referrals     User[]   @relation("Referral")
+  refPaid       Boolean  @default(false) // the inviter has been paid for this player
+  adult         Boolean  @default(false) // confirmed 18 or over at sign-up
+
+  // profile stats
+  plays         Int      @default(0)
+  spent         Int      @default(0)
+  won           Int      @default(0)
+  duelsWon      Int      @default(0)
+  duelsLost     Int      @default(0)
+
+  // Phase 2
+  rankedDone      Int     @default(0) // finished ranked runs (drives the referral reward)
+  validatedRanked Int     @default(0) // ranked runs whose replay was accepted (gates rewards)
+  flagged         Boolean @default(false) // under review: rewards are held
+  deviceHash      String?
+  lastIp          String?
+
+  items         Item[]
+  runs          Run[]
+  ledger        Ledger[]
+  missions      MissionProgress[]
+  seasonClaims  SeasonClaim[]
+  notifications Notification[]
+  scores        Score[]
+
+  @@index([deviceHash])
+  @@index([lastIp])
+}
+
+model Item {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind   String // "avatar" | "frame"
+  ref    String // avatar number or frame key
+
+  @@unique([userId, kind, ref])
+}
+
+// Every change to a balance is one row here. balance on User is the running total.
+model Ledger {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount    Int // positive in, negative out
+  reason    String // "entry" | "payout" | "duel" | "duel_refund" | "mission" | "streak" | "season" | "box" | "shop" | "refill" | "referral"
+  ref       String? // run id, period id, item key
+  idemKey   String   @unique // makes a replayed request a no-op
+
+  @@index([userId, createdAt])
+}
+
+// Stored result of a mutating request, so replaying it returns the same answer and changes nothing.
+model Idempotency {
+  key       String   @id // "<userId>:<route>:<client key>"
+  createdAt DateTime @default(now())
+  status    Int
+  body      Json
+
+  @@index([createdAt])
+}
+
+model Period {
+  id      String   @id @default(cuid())
+  kind    String // "weekly" | "cup"
+  game    String
+  startAt DateTime
+  endAt   DateTime
+  pool    Int      @default(0)
+  fee     Int      @default(0)
+  closed  Boolean  @default(false)
+  scores  Score[]
+
+  @@unique([kind, game, startAt])
+  @@index([closed, endAt])
+}
+
+// Best score per player per period.
+model Score {
+  id       String   @id @default(cuid())
+  periodId String
+  period   Period   @relation(fields: [periodId], references: [id])
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  score    Int
+  setAt    DateTime @default(now()) // tie-break: earlier wins
+  runId    String
+  payout   Int      @default(0)
+  place    Int? // set when the period closes
+
+  @@unique([periodId, userId])
+  @@index([periodId, score])
+}
+
+model Run {
+  id            String    @id @default(cuid())
+  createdAt     DateTime  @default(now())
+  finishedAt    DateTime?
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  game          String
+  gameVersion   Int       @default(1)
+  mode          String // "ranked" | "practice" | "cup" | "duel" | "challenge"
+  seed          Int
+  entry         Int
+  periodId      String?
+  score         Int? // the score that counts (the server's replay)
+  clientScore   Int? // what the browser reported; never trusted
+  frames        Int?
+  durationMs    Int?
+  inputLog      Bytes? // JSON array of [frame, code, value] triples
+  streamedTo    Int       @default(0) // last frame received over the live stream
+  status        String    @default("open") // "open" | "finished" | "rejected" | "flagged"
+  reason        String? // why it was rejected or flagged
+  rewardsHeld   Boolean   @default(false)
+  duelId        String?
+  duel          Duel?     @relation(fields: [duelId], references: [id])
+  challengeCode String?
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+model Duel {
+  id           String    @id @default(cuid())
+  createdAt    DateTime  @default(now())
+  game         String
+  stake        Int
+  status       String    @default("waiting") // "waiting" | "matched" | "settled" | "refunded"
+  creatorId    String
+  joinerId     String?
+  creatorScore Int?
+  joinerScore  Int?
+  creatorAt    DateTime? // when the creator's score was set (tie-break: earlier wins)
+  winnerId     String?
+  settledAt    DateTime?
+  expiresAt    DateTime
+  runs         Run[]
+
+  @@index([game, stake, status])
+  @@index([creatorId, createdAt])
+  @@index([joinerId, createdAt])
+  @@index([status, expiresAt])
+}
+
+model Challenge {
+  code      String   @id // short code used in the share link
+  createdAt DateTime @default(now())
+  userId    String
+  game      String
+  score     Int
+  runId     String
+}
+
+model MissionProgress {
+  id       String  @id @default(cuid())
+  userId   String
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  day      Int
+  mission  String // a mission id, or "bonus" for the all-three mystery box
+  progress Int     @default(0)
+  claimed  Boolean @default(false)
+  meta     Json? // e.g. the set of games played, for "play 2 different games"
+
+  @@unique([userId, day, mission])
+}
+
+model SeasonClaim {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  season Int
+  tier   Int
+
+  @@unique([userId, season, tier])
+}
+
+// One row per inviter reward, to cap them per week.
+model ReferralReward {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  inviterId String
+  invitedId String   @unique
+  week      String
+
+  @@index([inviterId, week])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String
+  body      String // may contain <b> only; names are escaped when it is written
+  read      Boolean  @default(false)
+
+  @@index([userId, read, createdAt])
+}
+
+// Real recent events for the ticker.
+model Activity {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  name      String
+  text      String // e.g. "scored 1,447 in"
+  game      String // game name, or "" when the event is not about a game
+
+  @@index([createdAt])
+}
+
+// Running totals: "burned", "fees:<day>", "emitted:<day>", "treasury".
+model Counter {
+  key   String @id
+  value Int    @default(0)
+}
