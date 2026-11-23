@@ -1,0 +1,30 @@
+[package]
+name = "podium"
+version = "0.1.0"
+description = "Podium Phase 3 on-chain ledger (DEVNET / LOCALNET ONLY, valueless test token)"
+edition = "2021"
+rust-version = "1.79"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "podium"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = "=0.31.1"
+anchor-spl = { version = "=0.31.1", default-features = false, features = ["token", "token_2022"] }
+
+[profile.release]
+overflow-checks = true
+lto = "fat"
+codegen-units = 1
+
+[workspace]

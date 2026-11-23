@@ -1,0 +1,32 @@
+{
+  "name": "@podium/chain",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./browser": "./src/browser.ts"
+  },
+  "scripts": {
+    "build:program": "bash scripts/build-program.sh",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "tsc --noEmit",
+    "setup:devnet": "tsx scripts/setup-devnet.ts",
+    "smoke:localnet": "tsx scripts/localnet-smoke.ts"
+  },
+  "dependencies": {
+    "@noble/hashes": "^1.8.0",
+    "buffer": "^6.0.3",
+    "@solana/spl-token": "^0.4.14",
+    "@solana/web3.js": "^1.98.4"
+  },
+  "devDependencies": {
+    "@podium/shared": "workspace:*",
+    "@types/node": "^20.19.0",
+    "litesvm": "0.8.0",
+    "tsx": "^4.19.2"
+  }
+}
