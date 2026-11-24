@@ -5,3 +5,5 @@ export * from './runner';
 export * from './draw-util';
 export * from './particles';
 export * from './registry';
+export * from './pace';
+export * from './juice';

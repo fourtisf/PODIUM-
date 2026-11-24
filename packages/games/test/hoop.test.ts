@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { hoop } from '../src/hoop';
+import { hoopV1 } from '../src/hoop.v1';
 import { Ev } from '../src/log';
 import { LiveRun, replay } from '../src/runner';
 import { checkDeterministic } from './helpers';
@@ -26,10 +27,11 @@ describe('hoop', () => {
   });
 
   it('scores a SWISH when the ball arrives while the hoop is over the centre', () => {
-    // The hoop is back at the centre when the phase reaches pi: 1.5 rad/s, so step 126. Shoot 21 steps earlier.
+    // Version 2: the hoop is back at the centre when the phase reaches pi: 1.5 + 8 * 0.11 = 2.38 rad/s, so step 80.
+    // Shoot 21 steps earlier.
     const run = new LiveRun(hoop, 1);
-    for (let f = 0; f < 126; f++) {
-      if (f === 105) run.push(Ev.PRESS_L);
+    for (let f = 0; f < 80; f++) {
+      if (f === 59) run.push(Ev.PRESS_L);
       run.step();
     }
     expect(run.state.score).toBe(1);
@@ -53,6 +55,25 @@ describe('hoop', () => {
     const s = hoop.init(1);
     s.score = 10;
     hoop.update(s, { l: false, r: false, ptr: false, px: 240, presses: [] }, 1 / 60);
+    // Version 2: the score that drives it opens at 8 and rejoins the real score at 40.
+    expect(s.ph).toBeCloseTo((1.5 + (8 + (10 * 32) / 40) * 0.11) / 60, 12);
+    s.score = 50;
+    s.ph = 0;
+    hoop.update(s, { l: false, r: false, ptr: false, px: 240, presses: [] }, 1 / 60);
+    expect(s.ph).toBeCloseTo((1.5 + 50 * 0.11) / 60, 12);
+  });
+
+  it('version 1 (archived): 1.5 rad/s at score 0, so the centre is back at step 126', () => {
+    checkDeterministic(hoopV1);
+    const run = new LiveRun(hoopV1, 1);
+    for (let f = 0; f < 126; f++) {
+      if (f === 105) run.push(Ev.PRESS_L);
+      run.step();
+    }
+    expect(run.state.score).toBe(1);
+    const s = hoopV1.init(1);
+    s.score = 10;
+    hoopV1.update(s, { l: false, r: false, ptr: false, px: 240, presses: [] }, 1 / 60);
     expect(s.ph).toBeCloseTo((1.5 + 10 * 0.11) / 60, 12);
   });
 });

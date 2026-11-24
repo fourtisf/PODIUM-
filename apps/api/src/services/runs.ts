@@ -123,7 +123,7 @@ export function judge(run: Run, input: RunInput, now: Date, stream: StreamSnapsh
     // A finish that arrives sooner than the run could have lasted.
     if (frames * MS_PER_FRAME > elapsed + LIMITS.clockSlackMs) return { kind: 'reject', reason: 'finished sooner than the run could have lasted' };
     // Phase 1 sanity: the claimed score must be possible in that time at all.
-    if ((input.clientScore ?? 0) > maxPlausibleScore(game, frames / 60)) return { kind: 'reject', reason: 'score is impossible for the run\'s duration' };
+    if ((input.clientScore ?? 0) > maxPlausibleScore(game, frames / 60, run.gameVersion)) return { kind: 'reject', reason: 'score is impossible for the run\'s duration' };
   }
   const def = versionDef(game, run.gameVersion);
   if (!def) return { kind: 'reject', reason: 'unknown game version' };

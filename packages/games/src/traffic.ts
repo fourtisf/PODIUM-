@@ -1,4 +1,5 @@
 // Traffic Rush. Port of the prototype's DEF.traffic; the Three.js view is apps/web/src/game3d/traffic.ts.
+import { ramp } from './pace';
 import { rnd } from './rng';
 import type { BaseState, GameDef } from './types';
 
@@ -29,17 +30,28 @@ export const TRAFFIC_POOL = 14;
 
 export const traffic: GameDef<TrafficState> = {
   key: 'traffic',
-  version: 1,
+  version: 2,
   gl: true,
   // score = floor(dist / 4), dist(T) = 22T + 0.45T(T + dt), so score / T <= 5.5 + 0.1125(T + dt): 73.01 at T = 600 s.
   // The bound is valid for runs up to 600 s; speed grows without limit, so no constant covers every duration.
+  // Version 2 adds 0.9 * (10 - t / 4) to the speed for t < 40 s: at most 180 more distance (45 points) in a run,
+  // so the ratio at 600 s becomes 73.08 (simulated at 60 Hz), still under 74.
   maxScorePerSecond: 74,
   scoreSlack: 0,
 
   init(seed) {
     const cars: TrafficCar[] = [];
     for (let i = 0; i < TRAFFIC_POOL; i++) cars.push({ on: false, x: 0, z: 0, v: 0 });
-    return { score: 0, t: 0, seed, fx: [], lane: 1, px: 0, sp: 0.6, dist: 0, cars };
+    const s: TrafficState = { score: 0, t: 0, seed, fx: [], lane: 1, px: 0, sp: 0.6, dist: 0, cars };
+    // Version 2: three cars are already on the road, 22 units apart (never two abreast).
+    for (let i = 0; i < 3; i++) {
+      const c = cars[i]!;
+      c.on = true;
+      c.x = (Math.floor(rnd(s) * 3) - 1) * 3;
+      c.z = -34 - i * 22;
+      c.v = 8 + rnd(s) * 7;
+    }
+    return s;
   },
 
   update(s, input, dt) {
@@ -51,13 +63,15 @@ export const traffic: GameDef<TrafficState> = {
     const tx = (s.lane - 1) * 3;
     s.px += (tx - s.px) * Math.min(1, dt * 14);
 
-    const v = 22 + s.t * 0.9;
+    // Version 2: the difficulty clock opens at 10 s and rejoins real time at 40 s.
+    const e = ramp(s.t, 10, 40);
+    const v = 22 + e * 0.9;
     s.dist += v * dt;
     s.score = Math.floor(s.dist / 4);
 
     s.sp -= dt;
     if (s.sp <= 0) {
-      s.sp = Math.max(0.34, 1 - s.t * 0.011);
+      s.sp = Math.max(0.34, 1 - e * 0.011);
       const c = s.cars.find((c) => !c.on);
       if (c) {
         c.on = true;

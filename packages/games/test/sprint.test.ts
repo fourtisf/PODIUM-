@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { sprint } from '../src/sprint';
+import { sprintV1 } from '../src/sprint.v1';
+import { ramp } from '../src/pace';
 import { Ev } from '../src/log';
 import { LiveRun, replay } from '../src/runner';
 import { checkDeterministic } from './helpers';
@@ -11,13 +13,22 @@ describe('sprint', () => {
     for (const seed of [1, 2, 3]) {
       const r = replay(sprint, seed, [], 600);
       expect(r.dead).toBe(true);
-      // Spike appears at 1.1 s at x = 510 and reaches the runner (x < 123) at about 280 px/s.
-      expect(r.seconds).toBeGreaterThan(2.3);
-      expect(r.seconds).toBeLessThan(2.7);
-      const dist = 270 * r.seconds + 4 * r.seconds ** 2;
+      // Version 2: the spike appears at 0.6 s at x = 510 and reaches the runner (x < 123) at about 355 px/s.
+      expect(r.seconds).toBeGreaterThan(1.6);
+      expect(r.seconds).toBeLessThan(1.8);
+      // Speed is 270 + 8 * ramp(t, 10, 50).
+      let dist = 0;
+      for (let t = 1 / 60; t <= r.seconds + 1e-9; t += 1 / 60) dist += (270 + 8 * ramp(t, 10, 50)) / 60;
       expect(Math.abs(r.score - dist / 20)).toBeLessThan(1.5);
+      // Version 1 (archived): spike at 1.1 s, about 280 px/s.
+      const v1 = replay(sprintV1, seed, [], 600);
+      expect(v1.seconds).toBeGreaterThan(2.3);
+      expect(v1.seconds).toBeLessThan(2.7);
+      expect(Math.abs(v1.score - (270 * v1.seconds + 4 * v1.seconds ** 2) / 20)).toBeLessThan(1.5);
     }
   });
+
+  it('version 1 (archived) is still deterministic', () => checkDeterministic(sprintV1));
 
   it('allows a double jump but not a third until landing', () => {
     const run = new LiveRun(sprint, 1);

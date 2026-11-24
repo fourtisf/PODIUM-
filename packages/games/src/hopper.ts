@@ -1,5 +1,6 @@
 // Road Hopper. Port of the prototype's DEF.hopper; the Three.js view is apps/web/src/game3d/hopper.ts.
 // World units: columns are 2 wide (x = column * 2) and row r lies at z = -r * 2.
+import { ramp } from './pace';
 import { rnd } from './rng';
 import type { BaseState, GameDef, Press } from './types';
 
@@ -58,7 +59,8 @@ export const HOP_TIME = 0.13;
 function makeRow(s: HopperState, r: number): HopperRow {
   const row: HopperRow = { r, type: 'grass', dir: rnd(s) < 0.5 ? -1 : 1, speed: 0, trees: [], items: [] };
   let t: HopperRowType = 'grass';
-  if (r > 3) {
+  // Version 2: roads and rivers start on row 2 (version 1: row 4), trees on row 2 (version 1: row 3).
+  if (r > 1) {
     const x = rnd(s);
     t = x < 0.42 ? 'road' : x < 0.66 && s.rivers < 2 ? 'river' : 'grass';
   }
@@ -67,10 +69,11 @@ function makeRow(s: HopperState, r: number): HopperRow {
 
   if (t === 'grass') {
     for (let c = -4; c <= 4; c++) {
-      if (r > 2 && rnd(s) < 0.2 && row.trees.length < 5) row.trees.push(c);
+      if (r > 1 && rnd(s) < 0.2 && row.trees.length < 5) row.trees.push(c);
     }
   } else if (t === 'road') {
-    row.speed = 3.4 + rnd(s) * 3 + Math.min(5, r * 0.045);
+    // Version 2: the per-row speed-up opens at row 25 and rejoins the real row at 111 (where it reaches its cap).
+    row.speed = 3.4 + rnd(s) * 3 + Math.min(5, ramp(Math.max(0, r), 25, 111) * 0.045);
     const n = 1 + Math.floor(rnd(s) * 3);
     const gap = 28 / n;
     const off = rnd(s) * 28;
@@ -79,7 +82,7 @@ function makeRow(s: HopperState, r: number): HopperRow {
       row.items.push({ x: ((off + i * gap) % 28) - 14, len });
     }
   } else {
-    row.speed = 1.8 + rnd(s) * 1.8 + Math.min(2, r * 0.02);
+    row.speed = 1.8 + rnd(s) * 1.8 + Math.min(2, ramp(Math.max(0, r), 25, 100) * 0.02);
     const n = 2 + Math.floor(rnd(s) * 2);
     const gap = 28 / n;
     const off = rnd(s) * 28;
@@ -98,7 +101,7 @@ function rowAt(s: HopperState, r: number): HopperRow | undefined {
 
 export const hopper: GameDef<HopperState> = {
   key: 'hopper',
-  version: 1,
+  version: 2,
   gl: true,
   mid: true,
   // score = highest row reached; a hop spans ceil(0.13 * 60) = 8 steps and the next one starts a step later,
@@ -180,7 +183,8 @@ export const hopper: GameDef<HopperState> = {
     }
 
     const tz = s.row * 2;
-    if (s.go) s.cam += (0.9 + Math.min(2.4, s.score * 0.035)) * dt;
+    // Version 2: the camera's drift opens at the speed of score 15 and rejoins the real score at 69 (its cap).
+    if (s.go) s.cam += (0.9 + Math.min(2.4, ramp(s.score, 15, 69) * 0.035)) * dt;
     if (tz > s.cam) s.cam += (tz - s.cam) * Math.min(1, dt * 4);
     if (tz < s.cam - 7.5) return true;
 

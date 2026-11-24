@@ -1,5 +1,6 @@
 // Glide: tap to flap a paper plane through ice gates and pick up stars. Port of the prototype's DEF.glide.
 import { sky } from './draw-util';
+import { ramp } from './pace';
 import { R, clamp } from './rng';
 import { H, W, type BaseState, type GameDef } from './types';
 
@@ -26,15 +27,27 @@ export interface GlideState extends BaseState {
   go: boolean;
 }
 
+function gate(s: GlideState, x: number): Gate {
+  const gy = R(s, 170, 470);
+  const gap = Math.max(118, 172 - ramp(s.gp, 6, 30) * 2);
+  const so = R(s, -28, 28);
+  return { x, gy, gap, so, st: 1, p: 0 };
+}
+
 export const glide: GameDef<GlideState> = {
   key: 'glide',
-  version: 1,
+  version: 2,
   // A gate is worth at most 3 (1 for passing, 2 for its star) and at most one gate is created per step: 3 * 60.
   // Scroll speed is 175 + 3 per gate passed with no cap, so there is no tighter constant bound.
   maxScorePerSecond: 180,
   scoreSlack: 0,
 
-  init: (seed) => ({ score: 0, t: 0, seed, fx: [], y: 320, vy: 0, gates: [], gp: 0, go: false }),
+  init(seed) {
+    const s: GlideState = { score: 0, t: 0, seed, fx: [], y: 320, vy: 0, gates: [], gp: 0, go: false };
+    // Version 2: the first gate is waiting at the right edge instead of 380 px away.
+    s.gates.push(gate(s, W - 20));
+    return s;
+  },
 
   update(s, input, dt) {
     s.t += dt;
@@ -46,14 +59,10 @@ export const glide: GameDef<GlideState> = {
 
     s.vy += 900 * dt;
     s.y += s.vy * dt;
-    const spd = 175 + s.gp * 3;
+    // Version 2: speed and gap follow a gate count that opens at 6 and rejoins the real count at 30.
+    const spd = 175 + ramp(s.gp, 6, 30) * 3;
     const last = s.gates[s.gates.length - 1];
-    if (!last || last.x < W - 235) {
-      const gy = R(s, 170, 470);
-      const gap = Math.max(118, 172 - s.gp * 2);
-      const so = R(s, -28, 28);
-      s.gates.push({ x: W + 40, gy, gap, so, st: 1, p: 0 });
-    }
+    if (!last || last.x < W - 235) s.gates.push(gate(s, W + 40));
     for (const g of s.gates) {
       g.x -= spd * dt;
       if (!g.p && g.x < 140) {

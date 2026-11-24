@@ -1,5 +1,6 @@
 // Hoop: shoot straight up at a hoop that slides side to side; three misses end the run. Port of the prototype's DEF.hoop.
 import { rr } from './draw-util';
+import { ramp } from './pace';
 import { H, W, type BaseState, type GameDef } from './types';
 
 export interface HoopState extends BaseState {
@@ -14,10 +15,14 @@ export interface HoopState extends BaseState {
 
 /** Hoop centre x. */
 const hx = (s: HoopState): number => 240 + 175 * Math.sin(s.ph);
+/** Version 2: swing speed and rim size follow a score that opens at 8 and rejoins the real score at 40 (where the rim reaches 26). */
+const lv = (s: HoopState): number => ramp(s.score, 8, 40);
+/** Rim half-width. */
+export const hoopRim = (s: HoopState): number => Math.max(26, 46 - lv(s) * 0.5);
 
 export const hoop: GameDef<HoopState> = {
   key: 'hoop',
-  version: 1,
+  version: 2,
   // One point per shot; the ball needs 21 steps to rise from 560 to 258 at 880 px/s, so at most 60 / 21 = 2.86 shots/s.
   maxScorePerSecond: 3,
   scoreSlack: 0,
@@ -27,12 +32,12 @@ export const hoop: GameDef<HoopState> = {
   update(s, input, dt) {
     s.t += dt;
     s.mt = Math.max(0, s.mt - dt);
-    s.ph += dt * (1.5 + s.score * 0.11);
+    s.ph += dt * (1.5 + lv(s) * 0.11);
     if (input.presses.length > 0 && !s.ball) s.ball = { y: 560 };
     if (s.ball) {
       s.ball.y -= 880 * dt;
       if (s.ball.y <= 258) {
-        const r = Math.max(26, 46 - s.score * 0.5);
+        const r = hoopRim(s);
         if (Math.abs(hx(s) - 240) < r) {
           s.score++;
           s.msg = 'SWISH';
@@ -67,7 +72,7 @@ export const hoop: GameDef<HoopState> = {
     ctx.arc(240, 640, 150, Math.PI, 0);
     ctx.stroke();
     // Backboard, net, rim.
-    const x = hx(s), r = Math.max(26, 46 - s.score * 0.5);
+    const x = hx(s), r = hoopRim(s);
     ctx.fillStyle = '#fff';
     rr(ctx, x - 70, 150, 140, 96, 8);
     ctx.strokeStyle = '#ff3d3d';

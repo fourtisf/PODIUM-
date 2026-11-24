@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { glide } from '../src/glide';
+import { glideV1 } from '../src/glide.v1';
 import { Ev } from '../src/log';
 import { LiveRun, replay } from '../src/runner';
 import { checkDeterministic } from './helpers';
@@ -14,8 +15,15 @@ describe('glide', () => {
     const run = new LiveRun(glide, 1);
     for (let f = 0; f < 100; f++) run.step();
     expect(run.state.y).toBe(320);
-    expect(run.state.gates.length).toBe(0);
+    // Version 2: the first gate waits at the right edge and does not move before the first tap.
+    expect(run.state.gates.length).toBe(1);
+    expect(run.state.gates[0]!.x).toBe(460);
+    const v1 = new LiveRun(glideV1, 1);
+    for (let f = 0; f < 100; f++) v1.step();
+    expect(v1.state.gates.length).toBe(0);
   });
+
+  it('version 1 (archived) is still deterministic', () => checkDeterministic(glideV1));
 
   it('a tap sets vy to -330 and gravity is 900', () => {
     const run = new LiveRun(glide, 1);
@@ -24,7 +32,12 @@ describe('glide', () => {
     expect(run.state.vy).toBeCloseTo(-330 + 900 / 60, 9);
     expect(run.state.y).toBeCloseTo(320 + (-330 + 900 / 60) / 60, 9);
     expect(run.state.gates.length).toBe(1);
-    expect(run.state.gates[0]!.gap).toBe(172);
+    // Version 2 opens at the gap of gate 6 (172 - 2 * 6); version 1 opened at 172.
+    expect(run.state.gates[0]!.gap).toBe(160);
+    const v1 = new LiveRun(glideV1, 1);
+    v1.push(Ev.PRESS_A);
+    v1.step();
+    expect(v1.state.gates[0]!.gap).toBe(172);
   });
 
   // Flaps whenever the plane is below the centre of the next gate.

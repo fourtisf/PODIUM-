@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { blade } from '../src/blade';
+import { bladeV1 } from '../src/blade.v1';
 import { Ev } from '../src/log';
 import { LiveRun, replay } from '../src/runner';
 import { checkDeterministic } from './helpers';
@@ -12,7 +13,18 @@ describe('blade', () => {
       const r = replay(blade, seed, [], 60 * 20);
       expect(r.dead).toBe(true);
       expect(r.score).toBe(0);
-      // Spawn at 0.7 s, then 246 px at 95..133 px/s.
+      // Version 2: spawn at 0.3 s, then 246 px at 143..178 px/s (the clock opens at 12 s).
+      expect(r.seconds).toBeGreaterThan(0.3 + 246 / 179);
+      expect(r.seconds).toBeLessThan(0.35 + 246 / 143);
+    }
+  });
+
+  it('version 1 (archived): spawn at 0.7 s, then 246 px at 95..133 px/s', () => {
+    checkDeterministic(bladeV1);
+    for (const seed of [1, 2, 3]) {
+      const r = replay(bladeV1, seed, [], 60 * 20);
+      expect(r.dead).toBe(true);
+      expect(r.score).toBe(0);
       expect(r.seconds).toBeGreaterThan(0.7 + 246 / 134);
       expect(r.seconds).toBeLessThan(0.75 + 246 / 95);
     }

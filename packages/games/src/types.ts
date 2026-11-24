@@ -46,6 +46,19 @@ export interface DrawEnv {
   fxDraw(): void;
 }
 
+/** Display-only readouts of a state, for the host's HUD effects and side panel. Never part of the rules. */
+export interface GameView {
+  /** 0..1: how close the player is to losing (red vignette). */
+  danger?: number;
+  /** 0..1: how fast the run feels (speed lines). */
+  speed?: number;
+  /** Score multiplier; the host calls out "Combo xN" when it rises past 1. */
+  mult?: number;
+  /** Side-panel stats, in order. */
+  stats?: { k: StatKey; v: number }[];
+}
+export type StatKey = 'combo' | 'level' | 'wave' | 'lives' | 'floors' | 'length' | 'gates' | 'streak' | 'speed';
+
 export interface GameDef<S extends BaseState = BaseState> {
   key: GameKey;
   /** Rules version. Bump it whenever update() or init() changes behaviour; runs replay on the version they were played on. */
@@ -66,4 +79,8 @@ export interface GameDef<S extends BaseState = BaseState> {
   update(s: S, input: Input, dt: number): boolean;
   /** 2D games only. */
   draw?(ctx: CanvasRenderingContext2D, s: S, env: DrawEnv): void;
+  /** Display only: readouts for the host (danger vignette, speed lines, combo callouts, side panel). Must not change `s`. */
+  view?(s: S): GameView;
+  /** Display only: how hard one of this game's effects shakes the screen, 0 (not at all) to 1. */
+  impact?(f: Fx): number;
 }

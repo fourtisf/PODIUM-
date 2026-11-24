@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { snake } from '../src/snake';
+import { snakeV1 } from '../src/snake.v1';
 import { Ev } from '../src/log';
 import { LiveRun, replay } from '../src/runner';
 import { checkDeterministic } from './helpers';
@@ -11,12 +12,19 @@ describe('snake', () => {
     for (const seed of [1, 2, 3]) {
       const r = replay(snake, seed, [], 600);
       expect(r.dead).toBe(true);
-      // Ten moves of 0.15 s (a little faster if food on the row was eaten).
-      expect(r.frames).toBeGreaterThanOrEqual(85);
-      expect(r.frames).toBeLessThanOrEqual(101);
+      // Version 2: ten moves of 0.128 s (the speed of score 10), a little faster if food on the row was eaten.
+      expect(r.frames).toBeGreaterThanOrEqual(72);
+      expect(r.frames).toBeLessThanOrEqual(78);
       expect(r.score).toBeLessThanOrEqual(1);
+      // Version 1 (archived): ten moves of 0.15 s.
+      const v1 = replay(snakeV1, seed, [], 600);
+      expect(v1.dead).toBe(true);
+      expect(v1.frames).toBeGreaterThanOrEqual(85);
+      expect(v1.frames).toBeLessThanOrEqual(101);
     }
   });
+
+  it('version 1 (archived) is still deterministic', () => checkDeterministic(snakeV1));
 
   it('turns relative to the heading and queues at most two turns', () => {
     const run = new LiveRun(snake, 1);

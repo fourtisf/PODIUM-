@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { hopper } from '../src/hopper';
+import { hopperV1 } from '../src/hopper.v1';
 import type { Input, Press } from '../src/types';
 import { checkDeterministic } from './helpers';
 
@@ -8,17 +9,21 @@ const DT = 1 / 60;
 
 describe('hopper', () => {
   it('same seed and inputs give the same score', () => checkDeterministic(hopper));
+  it('version 1 (archived) is still deterministic', () => checkDeterministic(hopperV1));
 
   it('each forward hop raises the score by one row', () => {
     for (const seed of [1, 2, 3, 99]) {
       const s = hopper.init(seed);
-      // Rows 1 and 2 are always open grass; a hop takes 8 steps.
+      // Row 1 is always open grass (version 2; rows 1..3 in version 1); a hop takes 8 steps.
       for (let f = 0; f < 8; f++) expect(hopper.update(s, input(...(f === 0 ? ['a' as const] : [])), DT)).toBe(false);
       expect(s.row).toBe(1);
       expect(s.score).toBe(1);
-      for (let f = 0; f < 8; f++) expect(hopper.update(s, input(...(f === 0 ? ['a' as const] : [])), DT)).toBe(false);
-      expect(s.row).toBe(2);
-      expect(s.score).toBe(2);
+      const v1 = hopperV1.init(seed);
+      for (let n = 1; n <= 2; n++) {
+        for (let f = 0; f < 8; f++) expect(hopperV1.update(v1, input(...(f === 0 ? ['a' as const] : [])), DT)).toBe(false);
+        expect(v1.row).toBe(n);
+        expect(v1.score).toBe(n);
+      }
     }
   });
 
@@ -57,6 +62,15 @@ describe('hopper', () => {
     expect(s.rows[0]!.r).toBe(-7);
     expect(s.rows.length).toBe(31);
     for (const row of s.rows) {
+      // Version 2: roads, rivers and trees can start on row 2.
+      if (row.r <= 1) expect(row.type).toBe('grass');
+      if (row.r <= 1) expect(row.trees).toEqual([]);
+    }
+    // Across seeds, rows 2 and 3 now often hold a road or a river.
+    const busy = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].filter((seed) => hopper.init(seed).rows.some((r) => r.r >= 2 && r.r <= 3 && r.type !== 'grass'));
+    expect(busy.length).toBeGreaterThan(3);
+    const v1 = hopperV1.init(11);
+    for (const row of v1.rows) {
       if (row.r <= 3) expect(row.type).toBe('grass');
       if (row.r <= 2) expect(row.trees).toEqual([]);
     }

@@ -1,4 +1,5 @@
 // Cube Field. Port of the prototype's DEF.cube; the Three.js view is apps/web/src/game3d/cube.ts.
+import { ramp } from './pace';
 import { R } from './rng';
 import { W } from './types';
 import type { BaseState, GameDef } from './types';
@@ -22,10 +23,12 @@ export const CUBE_COUNT = 70;
 
 export const cube: GameDef<CubeState> = {
   key: 'cube',
-  version: 1,
+  version: 2,
   gl: true,
   // score = floor(dist / 3), dist(T) = 30T + 0.55T(T + dt), so score / T <= 10 + 0.18334(T + dt): 120.01 at T = 600 s.
   // The bound is valid for runs up to 600 s; speed grows without limit, so no constant covers every duration.
+  // Version 2 adds 1.1 * (10 - t / 4) to the speed for t < 40 s: at most 220 more distance (73 points) in a run,
+  // so the ratio at 600 s becomes 120.13 (simulated at 60 Hz), still under 121.
   maxScorePerSecond: 121,
   scoreSlack: 0,
 
@@ -43,7 +46,8 @@ export const cube: GameDef<CubeState> = {
     s.vx += (a * 22 - s.vx) * Math.min(1, dt * 7);
     s.x += s.vx * dt;
 
-    const v = 30 + s.t * 1.1;
+    // Version 2: the difficulty clock opens at 10 s and rejoins real time at 40 s.
+    const v = 30 + ramp(s.t, 10, 40) * 1.1;
     s.dist += v * dt;
     s.score = Math.floor(s.dist / 3);
 

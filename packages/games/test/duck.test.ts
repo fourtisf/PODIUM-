@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { duck } from '../src/duck';
+import { duckV1 } from '../src/duck.v1';
 import { Ev } from '../src/log';
 import { LiveRun, replay } from '../src/runner';
 import { checkDeterministic } from './helpers';
@@ -38,7 +39,12 @@ describe('duck', () => {
     const frames = [1, 2, 3, 4, 5, 6].map((seed) => replay(duck, seed, [], 60 * 120));
     for (const r of frames) expect(r.dead).toBe(true);
     expect(new Set(frames.map((r) => r.frames)).size).toBeGreaterThan(1);
-    // The first log appears after 0.4 s and needs over 2 s to drift down to the duck.
-    for (const r of frames) expect(r.seconds).toBeGreaterThan(2.4);
+    // Version 2: two logs are on the river at the start (y 220 and -20) and drift at 260 px/s, so the duck
+    // left alone meets one within about 2.5 s (or survives a while if both miss it).
+    for (const r of frames) expect(r.seconds).toBeGreaterThan(1);
+    // Version 1 (archived): the first log appears after 0.4 s and needs over 2 s to drift down to the duck.
+    for (const seed of [1, 2, 3, 4, 5, 6]) expect(replay(duckV1, seed, [], 60 * 120).seconds).toBeGreaterThan(2.4);
   });
+
+  it('version 1 (archived) is still deterministic', () => checkDeterministic(duckV1));
 });

@@ -1,5 +1,6 @@
 // Sprint: auto-runner with a double jump over spikes. Port of the prototype's DEF.sprint.
 import { rr, sky } from './draw-util';
+import { ramp } from './pace';
 import { R, rnd } from './rng';
 import { W, type BaseState, type GameDef } from './types';
 
@@ -22,18 +23,22 @@ export interface SprintState extends BaseState {
 
 export const sprint: GameDef<SprintState> = {
   key: 'sprint',
-  version: 1,
+  version: 2,
   // Distance: speed (270 + 8 t) / 20 points per second, which has no cap, so it is taken at the longest run the
   // platform allows (economy.maxRunSeconds = 3600 s): average (270 + 4 * 3600) / 20 = 733.5/s. Coins: 10 each, at
   // most one per spawn, spawns at least 0.75 * 0.55 = 0.4125 s apart = 24.3/s. Total 757.8/s.
+  // Version 2 adds 8 * (10 - t / 5) to the speed for t < 50 s: at most 2000 px (100 points) in a whole run, and
+  // the spawn floor is the same, so the bound stands (757.4/s simulated at 60 Hz over 3600 s).
   maxScorePerSecond: 760,
   scoreSlack: 0,
 
-  init: (seed) => ({ score: 0, t: 0, seed, fx: [], y: 0, vy: 0, j: 0, obs: [], co: [], bonus: 0, sp: 1.1, dist: 0 }),
+  init: (seed) => ({ score: 0, t: 0, seed, fx: [], y: 0, vy: 0, j: 0, obs: [], co: [], bonus: 0, sp: 0.6, dist: 0 }),
 
   update(s, input, dt) {
     s.t += dt;
-    const v = 270 + s.t * 8;
+    // Version 2: the difficulty clock opens at 10 s and rejoins real time at 50 s.
+    const e = ramp(s.t, 10, 50);
+    const v = 270 + e * 8;
     s.dist += v * dt;
     s.score = Math.floor(s.dist / 20) + s.bonus;
     for (let i = 0; i < input.presses.length; i++) {
@@ -53,7 +58,7 @@ export const sprint: GameDef<SprintState> = {
 
     s.sp -= dt;
     if (s.sp <= 0) {
-      s.sp = R(s, 0.75, 1.5) * Math.max(0.55, 1 - s.t * 0.006);
+      s.sp = R(s, 0.75, 1.5) * Math.max(0.55, 1 - e * 0.006);
       const dbl = rnd(s) < 0.3;
       s.obs.push({ x: W + 30, w: dbl ? 52 : 28, h: R(s, 38, 66) });
       if (rnd(s) < 0.6) s.co.push({ x: W + 30 + (dbl ? 26 : 14), y: 500 - R(s, 112, 168) });

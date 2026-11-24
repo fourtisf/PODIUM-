@@ -1,5 +1,6 @@
 // Snake on a 20 x 20 grid; left and right turn relative to the heading. Port of the prototype's DEF.snake.
 import { rr } from './draw-util';
+import { ramp } from './pace';
 import { R } from './rng';
 import { H, W, type BaseState, type GameDef } from './types';
 
@@ -18,6 +19,9 @@ export interface SnakeState extends BaseState {
 
 const CELLS = 20 * 20;
 
+/** Seconds per move. Version 2: follows a score that opens at 10 and rejoins the real score at 37 (the 0.07 s floor is reached at 36.4). */
+export const snakeStep = (s: Pick<SnakeState, 'score'>): number => Math.max(0.07, 0.15 - ramp(s.score, 10, 37) * 0.0022);
+
 /** Picks a free cell for the food. */
 function food(s: Pick<SnakeState, 'seed' | 'body'>): Cell {
   // The prototype would loop forever on a full board; there is no free cell, so park the food off the grid.
@@ -33,7 +37,7 @@ function food(s: Pick<SnakeState, 'seed' | 'body'>): Cell {
 
 export const snake: GameDef<SnakeState> = {
   key: 'snake',
-  version: 1,
+  version: 2,
   // One point per food and at most one cell per move; the move interval never drops below 0.07 s (1 / 0.07 = 14.3).
   maxScorePerSecond: 15,
   scoreSlack: 0,
@@ -48,7 +52,7 @@ export const snake: GameDef<SnakeState> = {
     s.t += dt;
     for (const q of input.presses) if ((q === 'l' || q === 'r') && s.turns.length < 2) s.turns.push(q);
     s.acc += dt;
-    const step = Math.max(0.07, 0.15 - s.score * 0.0022);
+    const step = snakeStep(s);
     while (s.acc >= step) {
       s.acc -= step;
       const q = s.turns.shift();
