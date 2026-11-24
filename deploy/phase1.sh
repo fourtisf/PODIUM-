@@ -14,7 +14,8 @@ pnpm --filter @podium/api exec prisma migrate deploy
 pnpm covers
 pnpm build
 
-if pm2 describe podium-api >/dev/null 2>&1; then
+# Only this app's two processes are touched; other PM2 apps on the server keep running.
+if pm2 describe "${PM2_PREFIX:-climbgames}-api" >/dev/null 2>&1; then
   pm2 reload deploy/ecosystem.config.js --update-env
 else
   pm2 start deploy/ecosystem.config.js
