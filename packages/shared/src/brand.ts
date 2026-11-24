@@ -26,9 +26,13 @@ function envCa(): string | undefined {
   }
 }
 
-/** The project's X (Twitter) profile, or null until NEXT_PUBLIC_X_URL is set to an x.com / twitter.com link. */
+/** The official X profile. NEXT_PUBLIC_X_URL overrides it; set it to "none" to hide the X links. */
+export const X_PROFILE = 'https://x.com/PlayClimbGames';
+
+/** The project's X (Twitter) profile link, or null when it is turned off or not a valid x.com / twitter.com profile. */
 export function xUrl(v: string | undefined = envX()): string | null {
-  const u = (v ?? '').trim();
+  if ((v ?? '').trim().toLowerCase() === 'none') return null;
+  const u = (v ?? '').trim() || X_PROFILE;
   return /^https:\/\/(www\.)?(x|twitter)\.com\/[A-Za-z0-9_]{1,15}\/?$/.test(u) ? u : null;
 }
 

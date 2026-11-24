@@ -85,7 +85,8 @@ describe('social links', () => {
   it('accepts only x.com / twitter.com profile links', () => {
     expect(xUrl('https://x.com/climbgames')).toBe('https://x.com/climbgames');
     expect(xUrl('https://twitter.com/climb_games/')).toBe('https://twitter.com/climb_games/');
-    expect(xUrl('')).toBeNull();
+    expect(xUrl('')).toBe('https://x.com/PlayClimbGames');
+    expect(xUrl('none')).toBeNull();
     expect(xUrl('http://x.com/climbgames')).toBeNull();
     expect(xUrl('https://evil.example/x.com/a')).toBeNull();
     expect(xUrl('javascript:alert(1)')).toBeNull();
