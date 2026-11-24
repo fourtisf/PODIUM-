@@ -9,7 +9,7 @@ import { H, LiveRun, Particles, W, gameDef } from '@podium/games';
 import type { Fx } from '@podium/games';
 import { ANTI_ABUSE, BRAND, CUP_WINNERS, ECONOMY, GAMES, WEEKLY_WINNERS, fmt, levelCeil, levelFloor, missionDef } from '@podium/shared';
 import type { BoardResponse, FinishRunResponse, GameKey, RunMode, StartRunResponse, StreamReply } from '@podium/shared';
-import { ApiFailure, api, errorText, wsBase } from '@/lib/api';
+import { ApiFailure, api, wsBase } from '@/lib/api';
 import { beep, isMuted, setMuted, startMusic, stopMusic } from '@/lib/audio';
 import {
   Accumulator, StreamCursor, keyDownEvents, keyUpEvents, logUpTo, newHeld, padDownEvents, padUpEvents, pointerDownEvents, pointerMoveEvents,
@@ -17,6 +17,10 @@ import {
 } from '@/lib/recorder';
 import { renderShareCard } from '@/lib/sharecard';
 import type { Scene3D } from '@/game3d/types';
+import { useContent, useErrors, useT } from '@/i18n/client';
+import type { Translator } from '@/i18n/core';
+import { commonEn } from '@/i18n/dict/common.en';
+import { playEn } from '@/i18n/dict/play.en';
 import { runCost, useSession } from './Session';
 import { TutorialCard, markTutorialSeen, tutorialSeen } from './Tutorial';
 import { Cover } from './ui';
@@ -65,7 +69,8 @@ const kick = (el: Element | null, cls: string) => {
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const STREAMED: RunMode[] = ['ranked', 'cup', 'duel'];
-const MODE_TAG: Record<RunMode, string> = { ranked: 'Ranked', cup: 'Cup', duel: 'Duel', challenge: 'Challenge', practice: 'Practice' };
+type PlayT = Translator<keyof typeof playEn>;
+const modeTag = (t: PlayT, mode: RunMode): string => t(`mode.${mode}`);
 
 const ARROW = (d: number) => (
   <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -79,6 +84,14 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
   const sref = useRef(session);
   sref.current = session;
   const g = GAMES[game];
+  const t = useT('play', playEn);
+  const tc = useT('common', commonEn);
+  const content = useContent();
+  const errs = useErrors();
+  const gc = content.game(game);
+  // The run's effect reads the current language through this ref (the language cannot change mid-run).
+  const lref = useRef({ t, tc, content, errs, gc });
+  lref.current = { t, tc, content, errs, gc };
 
   const [phase, setPhaseState] = useState<Phase>('loading');
   const [result, setResult] = useState<ResultView | null>(null);
@@ -188,14 +201,15 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
     let wsRetry: ReturnType<typeof setTimeout> | undefined;
 
     const s = () => sref.current;
-    const fxText = (t: string) => {
-      if (fxRef.current) fxRef.current.textContent = t;
+    const L = () => lref.current;
+    const fxText = (text: string) => {
+      if (fxRef.current) fxRef.current.textContent = text;
       kick(fxRef.current, 'on');
     };
-    const hint = (t: string, show: boolean) => {
+    const hint = (text: string, show: boolean) => {
       const el = hintRef.current;
       if (!el) return;
-      el.textContent = t;
+      el.textContent = text;
       el.classList.toggle('hide', !show);
     };
 
@@ -253,22 +267,25 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
       }
       const old = prevTarget, n = target(sc), d = targets.duel;
       if (old && old.t && sc > old.t.s && !force) {
-        fxText(old.t.me ? 'New personal best' : 'Passed ' + old.t.n);
+        fxText(old.t.me ? L().t('fx.pb') : L().t('fx.passed', { name: old.t.n }));
         beep(784, 0.12, 'sine', 0.06);
         setTimeout(() => beep(1047, 0.16, 'sine', 0.06), 90);
       }
       prevTarget = n;
-      if (placeRef.current) placeRef.current.textContent = mode === 'ranked' || mode === 'cup' ? '#' + n.place : d ? (d.friend ? 'Challenge' : 'Duel') : '';
+      const lt = L().t;
+      if (placeRef.current) placeRef.current.textContent = mode === 'ranked' || mode === 'cup' ? '#' + n.place : d ? modeTag(lt, d.friend ? 'challenge' : 'duel') : '';
       if (targetRef.current) {
         targetRef.current.textContent = n.t
-          ? (n.t.me ? 'Your best ' : d ? 'Beat ' + n.t.n + ' ' : 'Next ' + n.t.n + ' ') + fmt(n.t.s)
+          ? n.t.me
+            ? lt('hud.yourBest', { n: fmt(n.t.s) })
+            : lt(d ? 'hud.beat' : 'hud.next', { name: n.t.n, n: fmt(n.t.s) })
           : d
             ? d.opp
-              ? 'Ahead of ' + d.opp
-              : 'Set the score to beat'
+              ? lt('hud.ahead', { name: d.opp })
+              : lt('hud.setScore')
             : mode !== 'practice'
-              ? 'You lead the board'
-              : 'Top of the board';
+              ? lt('hud.lead')
+              : lt('hud.top');
       }
       if (barRef.current) barRef.current.style.width = (n.t ? clamp((sc - n.floor) / (n.t.s - n.floor), 0, 1) * 100 : 100) + '%';
     };
@@ -351,7 +368,7 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
       serverSaidEnded = true;
       if (phaseNow === 'play' || phaseNow === 'pause' || phaseNow === 'count') {
         stopMusic();
-        s().toast(`The run was ended: ${reason}.`);
+        s().toast(L().t('ended', { reason: L().errs.reason(reason) }));
         void finish();
       }
     };
@@ -361,7 +378,7 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
       setPhase('play');
       acc.reset();
       cdnRef.current?.classList.remove('on');
-      fxText('Go');
+      fxText(L().t('fx.go'));
       beep(880, 0.2, 'square', 0.05);
       startMusic(g.song, () => phaseNow === 'play');
       hintTimer = setTimeout(() => hintRef.current?.classList.add('hide'), 2600);
@@ -379,7 +396,7 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
       for (const f of list) {
         if (f.k === 'burst') parts.burst(f.x, f.y, f.c, f.n, f.sp);
         else if (f.k === 'beep') beep(f.f, f.d, f.w, f.v, f.slide);
-        else if (f.k === 'text') fxText(f.t);
+        else if (f.k === 'text') fxText(L().content.fx(f.t));
       }
     };
     const die = () => {
@@ -448,7 +465,7 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
       stopMusic();
       const run = live, st = start;
       const body = { score: run.score, frames: run.frame, inputLog: logUpTo(run.log, run.frame) };
-      const slow = setTimeout(() => alive && hint('Saving your score', true), 900);
+      const slow = setTimeout(() => alive && hint(L().t('saving'), true), 900);
       let res: FinishRunResponse | null = null, err: unknown = null;
       for (let attempt = 0; attempt < 4 && alive; attempt++) {
         try {
@@ -467,12 +484,13 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
       if (!alive) return;
       hint('', false);
       const u = s().me?.user;
+      const lt = L().t;
       if (!res) {
         const lv = u?.level ?? 1, xp = u?.xp ?? 0;
         setResult({
-          title: titleFor(mode, targets.duel?.opp ?? null), score: run.score, badges: [{ c: '', t: 'Not recorded' }],
-          info: err instanceof ApiFailure && err.code === 'run_rejected' ? `This run was not accepted: ${err.message}.` : errorText(err),
-          rows: [], level: lv, xpPct: pct(xp, lv), xpToGo: Math.max(0, levelCeil(lv) - xp), again: 'Play again', runId: null, shareLine: '', cheer: false,
+          title: titleFor(lt, mode, targets.duel?.opp ?? null), score: run.score, badges: [{ c: '', t: lt('notRecorded') }],
+          info: err instanceof ApiFailure && err.code === 'run_rejected' ? lt('rejected', { reason: L().errs.reason(err.message) }) : L().errs.text(err),
+          rows: [], level: lv, xpPct: pct(xp, lv), xpToGo: Math.max(0, levelCeil(lv) - xp), again: lt('again'), runId: null, shareLine: '', cheer: false,
         });
         setPhase('over');
         void s().refresh();
@@ -480,11 +498,11 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
       }
       s().patchUser({ balance: res.user.balance, xp: res.user.xp, level: res.user.level, boxes: res.user.boxes });
       const best = res.newBest ? res.score : targets.best;
-      setResult(buildResult(res, best, targets));
+      setResult(buildResult(lt, res, best, targets));
       setPhase('over');
       for (const id of res.missionsCompleted) {
         const m = missionDef(id);
-        if (m) s().toast('Mission complete: ' + m.title);
+        if (m) s().toast(lt('missionDone', { title: L().content.mission(m.id, m.title) }));
       }
       void s().refresh();
       // The line under the badges names the next player to pass; that needs the fresh board.
@@ -495,7 +513,7 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
           const mine = b.me?.score ?? best, place = b.me?.place ?? res.place;
           const nx = b.rows.find((r) => r.place === place - 1);
           if (alive && place > paid && nx) {
-            const line = `${fmt(nx.score - mine + 1)} more points to pass ${nx.name}. Your best is ${fmt(mine)}.`;
+            const line = lt('toPass', { n: fmt(nx.score - mine + 1), name: nx.name, best: fmt(mine) });
             setResult((r) => (r && r.runId === res!.runId ? { ...r, info: line } : r));
           }
         } catch {
@@ -580,13 +598,13 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
       cv3.style.display = def.gl ? 'block' : 'none';
       cdnRef.current?.classList.remove('on');
       stage.classList.remove('shake');
-      hint(g.keys, true);
+      hint(L().gc.keys, true);
       if (scoreRef.current) scoreRef.current.textContent = '0';
       try {
         // A visitor who lands here directly has no session yet: practice starts as a guest.
         if (!s().me) {
           if (mode !== 'practice') {
-            s().toast('Sign in to do that. Guests can play practice only.');
+            s().toast(L().t('guestOnly'));
             s().openSignIn();
             leaveRef.current();
             return;
@@ -610,7 +628,7 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
             if (!scene) throw new Error('no scene');
           } catch {
             if (alive) {
-              s().toast("The 3D game couldn't load in this browser.");
+              s().toast(L().t('no3d'));
               leaveRef.current();
             }
             return;
@@ -724,14 +742,23 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
         /* guests and unrecorded runs share the plain link */
       }
     }
-    const img = await renderShareCard({ gameKey: game, gameName: g.name, score: result.score, line: result.shareLine, playerName: me?.user.name ?? 'Guest', level: me?.user.level ?? 1 });
+    const img = await renderShareCard({
+      gameKey: game,
+      gameName: g.name,
+      score: result.score,
+      line: result.shareLine,
+      playerName: me?.user.name ?? t('guest'),
+      level: me?.user.level ?? 1,
+      levelText: t('card.level', { n: me?.user.level ?? 1 }),
+      cta: t('card.cta'),
+    });
     setShare({ img, link });
     setSharing(false);
   };
-  const copyLink = (t: string) => {
-    const bad = () => sref.current.toast('Copy failed. Select the link and copy it manually.');
+  const copyLink = (text: string) => {
+    const bad = () => sref.current.toast(tc('copy.linkFail'));
     try {
-      navigator.clipboard.writeText(t).then(() => sref.current.toast('Challenge link copied.'), bad);
+      navigator.clipboard.writeText(text).then(() => sref.current.toast(t('linkCopied')), bad);
     } catch {
       bad();
     }
@@ -763,11 +790,11 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
           <Cover game={game} eager />
         </div>
         <div className="stage" id="stage" ref={stageRef}>
-          <canvas id="cv" width={W} height={H} ref={cvRef} aria-label={`${g.name} game`} />
-          <canvas id="cv3" width={W} height={H} ref={cv3Ref} aria-label={`${g.name} game`} />
+          <canvas id="cv" width={W} height={H} ref={cvRef} aria-label={t('canvas', { game: g.name })} />
+          <canvas id="cv3" width={W} height={H} ref={cv3Ref} aria-label={t('canvas', { game: g.name })} />
           <div className="flash" id="flash" ref={flashRef} />
           <div className="gtop">
-            <button className="gb" id="quit" aria-label={phase === 'pause' ? 'Resume' : 'Pause'} onClick={() => eng.current?.pause(phaseRef.current === 'play')}>
+            <button className="gb" id="quit" aria-label={phase === 'pause' ? t('resume') : t('pause')} onClick={() => eng.current?.pause(phaseRef.current === 'play')}>
               <svg viewBox="0 0 20 20" aria-hidden="true">
                 <rect x="5" y="4" width="3.4" height="12" rx="1.2" />
                 <rect x="11.6" y="4" width="3.4" height="12" rx="1.2" />
@@ -776,10 +803,10 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
             <div className="gname">
               <b id="oName">{g.name}</b>
               <span id="oMode" className={mode !== 'practice' ? 'rk' : ''}>
-                {MODE_TAG[mode]}
+                {modeTag(t, mode)}
               </span>
             </div>
-            <button className={`gb ${muted ? 'off' : ''}`} id="mute" aria-label={muted ? 'Turn sound on' : 'Turn sound off'} aria-pressed={!muted} onClick={() => eng.current?.toggleMute()}>
+            <button className={`gb ${muted ? 'off' : ''}`} id="mute" aria-label={muted ? t('soundOn') : t('soundOff')} aria-pressed={!muted} onClick={() => eng.current?.toggleMute()}>
               <svg viewBox="0 0 20 20" aria-hidden="true">
                 <path d="M3 8h3l4-3.5v11L6 12H3z" />
                 <path id="muteW" d="M13 7.5a4 4 0 0 1 0 5M15.2 5.4a7 7 0 0 1 0 9.2" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
@@ -801,24 +828,25 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
           <div className="fx" id="fx" ref={fxRef} aria-live="polite" />
           <div className="count" id="cdn" ref={cdnRef} />
           <div className="ghint" id="oKeys" ref={hintRef}>
-            {g.keys}
+            {gc.keys}
           </div>
           {tut && phase === 'loading' && <TutorialCard game={game} onDone={closeTut} />}
           <div className={`veil pause ${phase === 'pause' ? 'on' : ''}`} id="pauseP">
             <div className="rc">
-              <h3>Paused</h3>
+              <h3>{t('paused')}</h3>
               <button className="btn go" id="resume" onClick={() => eng.current?.pause(false)}>
-                Resume<kbd>Esc</kbd>
+                {t('resume')}
+                <kbd>Esc</kbd>
               </button>
               {mode !== 'duel' && mode !== 'challenge' && (
                 <button className="btn alt" id="restart" onClick={again}>
-                  Restart <kbd>{cost} tChips</kbd>
+                  {t('restart')} <kbd>{t('cost', { n: cost })}</kbd>
                 </button>
               )}
               <button className="btn alt" id="leave" onClick={leave}>
-                Leave game
+                {t('leave')}
               </button>
-              {STREAMED.includes(mode) && <div className="hint">A {MODE_TAG[mode].toLowerCase()} run ends after {Math.round(ANTI_ABUSE.maxBehindMs / 1000)} seconds of pause in total.</div>}
+              {STREAMED.includes(mode) && <div className="hint">{t('pauseLimit', { mode: modeTag(t, mode).toLowerCase(), n: Math.round(ANTI_ABUSE.maxBehindMs / 1000) })}</div>}
             </div>
           </div>
           <div className={`veil result ${phase === 'over' && result ? 'on' : ''}`} id="panel">
@@ -850,23 +878,24 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
                   </tbody>
                 </table>
                 <div className="xp">
-                  <span id="rLv">Level {result.level}</span>
+                  <span id="rLv">{t('level', { n: result.level })}</span>
                   <i>
                     <u id="rXp" style={{ width: xpOn ? `${result.xpPct}%` : '0%' }} />
                   </i>
-                  <span id="rXpT">{fmt(result.xpToGo)} XP to go</span>
+                  <span id="rXpT">{t('xpToGo', { n: fmt(result.xpToGo) })}</span>
                 </div>
                 <div className="cta">
                   <button className="btn go" id="again" onClick={again}>
                     {result.again}
-                    <kbd>Space</kbd>
+                    <kbd>{t('kbd.space')}</kbd>
                   </button>
                   <button className="btn alt" id="close" onClick={leave}>
-                    Back<kbd>Esc</kbd>
+                    {t('back')}
+                    <kbd>Esc</kbd>
                   </button>
                 </div>
                 <button className="lnk" id="shareB" onClick={openShare} disabled={sharing}>
-                  Share this score
+                  {t('share')}
                 </button>
               </div>
             )}
@@ -874,49 +903,49 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
         </div>
         <div className="pad" id="pad">
           {pad !== 'a' && (
-            <button aria-label="Left" {...padBtn('l')}>
+            <button aria-label={t('left')} {...padBtn('l')}>
               {ARROW(-1)}
             </button>
           )}
           {pad !== 'lr' && (
             <button className="act" {...padBtn('a')}>
-              {g.act || 'Go'}
+              {gc.act || t('fx.go')}
             </button>
           )}
           {pad !== 'a' && (
-            <button aria-label="Right" {...padBtn('r')}>
+            <button aria-label={t('right')} {...padBtn('r')}>
               {ARROW(1)}
             </button>
           )}
         </div>
       </div>
       {share && result && (
-        <div className="scrim on" id="share" role="dialog" aria-modal="true" aria-label="Share this score" onClick={(e) => e.target === e.currentTarget && setShare(null)}>
+        <div className="scrim on" id="share" role="dialog" aria-modal="true" aria-label={t('share')} onClick={(e) => e.target === e.currentTarget && setShare(null)}>
           <div className="sheet" style={{ position: 'relative' }}>
-            <button className="x" aria-label="Close" onClick={() => setShare(null)}>
+            <button className="x" aria-label={tc('close')} onClick={() => setShare(null)}>
               ✕
             </button>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img id="shImg" alt={share.img ? 'Score card' : 'Your browser blocked the image. The link still works.'} src={share.img ?? undefined} />
+            <img id="shImg" alt={share.img ? t('shareImg') : t('shareBlocked')} src={share.img ?? undefined} />
             <div className="row">
               <a className="btn go" id="shDl" href={share.img ?? '#'} download={`${BRAND.name.toLowerCase()}-${game}-${result.score}.png`}>
-                Download
+                {t('download')}
               </a>
               <button
                 className="btn alt"
                 id="shX"
                 onClick={() =>
                   window.open(
-                    'https://x.com/intent/post?text=' + encodeURIComponent(`I scored ${fmt(result.score)} in ${g.name} on ${BRAND.name}. Beat it:`) + '&url=' + encodeURIComponent(share.link),
+                    'https://x.com/intent/post?text=' + encodeURIComponent(t('tweet', { score: fmt(result.score), game: g.name, brand: BRAND.name })) + '&url=' + encodeURIComponent(share.link),
                     '_blank',
                     'noopener',
                   )
                 }
               >
-                Post on X
+                {t('postX')}
               </button>
               <button className="btn alt" id="shCopy" onClick={() => copyLink(share.link)}>
-                Copy challenge link
+                {t('copyLink')}
               </button>
             </div>
           </div>
@@ -931,93 +960,93 @@ const pct = (xp: number, lv: number): number => {
   return next > base ? clamp(((xp - base) / (next - base)) * 100, 0, 100) : 0;
 };
 
-function titleFor(mode: RunMode, opp: string | null): string {
-  if (mode === 'ranked') return 'Ranked run';
-  if (mode === 'cup') return `${BRAND.name} Cup run`;
-  if (mode === 'duel') return opp ? `Duel against ${opp}` : 'Duel run';
-  if (mode === 'challenge') return opp ? `Challenge from ${opp}` : 'Challenge run';
-  return 'Practice run';
+function titleFor(t: PlayT, mode: RunMode, opp: string | null): string {
+  if (mode === 'ranked') return t('title.ranked');
+  if (mode === 'cup') return t('title.cup', { brand: BRAND.name });
+  if (mode === 'duel') return opp ? t('title.duelVs', { name: opp }) : t('title.duel');
+  if (mode === 'challenge') return opp ? t('title.challengeFrom', { name: opp }) : t('title.challenge');
+  return t('title.practice');
 }
 
 /** Turns the server's answer into the prototype's result screen. Nothing here is computed from the local run. */
-function buildResult(res: FinishRunResponse, best: number, targets: Targets): ResultView {
+function buildResult(t: PlayT, res: FinishRunResponse, best: number, targets: Targets): ResultView {
   const { mode, score: sc, place } = res;
   const cup = mode === 'cup';
   const B: { c: string; t: string }[] = [];
   const has = (b: FinishRunResponse['badges'][number]) => res.badges.includes(b);
-  let info = "Practice runs aren't recorded. Play ranked to get on the board.";
+  let info = t('info.practice');
   let rows = res.top5;
-  let again = 'Play again';
-  let shareLine = 'Practice run';
+  let again = t('again');
+  let shareLine = t('title.practice');
   let cheer = res.newBest;
   let opp: string | null = targets.duel?.opp ?? null;
-  const xpBadge = () => res.xpGained > 0 && B.push({ c: 'b2', t: `+${res.xpGained} XP` });
+  const xpBadge = () => res.xpGained > 0 && B.push({ c: 'b2', t: t('badge.xp', { n: res.xpGained }) });
 
   if (res.rewardsHeld || has('held')) {
-    B.push({ c: '', t: 'Held for review' });
-    info = 'This run is being reviewed. Nothing was recorded and its rewards wait for the review.';
-    shareLine = MODE_TAG[mode] + ' run';
+    B.push({ c: '', t: t('badge.held') });
+    info = t('info.held');
+    shareLine = t('share.modeRun', { mode: modeTag(t, mode) });
   } else if (mode === 'ranked' || cup) {
     const paid = cup ? CUP_WINNERS : WEEKLY_WINNERS;
-    if (res.newBest) B.push({ c: 'b1', t: 'New best' });
-    if (place) B.push({ c: '', t: `Place ${place}` });
-    if (place && place <= paid) B.push({ c: 'b3', t: 'Prize zone' });
+    if (res.newBest) B.push({ c: 'b1', t: t('badge.newBest') });
+    if (place) B.push({ c: '', t: t('badge.place', { n: place }) });
+    if (place && place <= paid) B.push({ c: 'b3', t: t('badge.prize') });
     xpBadge();
-    if (res.boxDropped) B.push({ c: 'b3', t: 'Mystery box' });
-    if (place && place <= paid) info = `Hold place ${place} until the ${cup ? 'cup' : 'week'} closes and you win ${fmt(res.prizeIfHeld)} tChips.`;
-    else if (place) info = `Your best is ${fmt(Math.max(best, res.newBest ? sc : 0))}.`;
-    else info = 'Score at least 1 to get on the board.';
-    shareLine = place ? `Place ${place} this week` : 'Ranked run';
+    if (res.boxDropped) B.push({ c: 'b3', t: t('badge.box') });
+    if (place && place <= paid) info = t(cup ? 'info.holdCup' : 'info.holdWeek', { place, n: fmt(res.prizeIfHeld) });
+    else if (place) info = t('info.best', { n: fmt(Math.max(best, res.newBest ? sc : 0)) });
+    else info = t('info.atLeast1');
+    shareLine = place ? t('share.placeWeek', { n: place }) : t('title.ranked');
   } else if (mode === 'duel' && res.duel) {
     const d = res.duel;
     opp = d.opponent ?? opp;
     if (d.won === null) {
-      B.push({ c: '', t: 'Waiting for an opponent' });
-      info = `Waiting for an opponent. Your stake is refunded if nobody joins within ${ECONOMY.duelExpiryHours} hours.`;
-      rows = [{ place: 1, name: 'You', score: sc, me: true }];
-      shareLine = 'Duel run';
+      B.push({ c: '', t: t('badge.waiting') });
+      info = t('info.waiting', { h: ECONOMY.duelExpiryHours });
+      rows = [{ place: 1, name: t('you'), score: sc, me: true }];
+      shareLine = t('title.duel');
     } else {
-      const t = d.opponentScore ?? 0, o = d.opponent ?? 'your opponent';
+      const ts = d.opponentScore ?? 0, o = d.opponent ?? t('yourOpp');
       if (d.won) {
-        B.push({ c: 'b1', t: 'Duel won' }, { c: 'b3', t: `+${fmt(d.payout)} tChips` });
-        info = `You beat ${o}'s ${fmt(t)} and took the pot.`;
+        B.push({ c: 'b1', t: t('badge.duelWon') }, { c: 'b3', t: t('badge.chips', { n: fmt(d.payout) }) });
+        info = t('info.duelWon', { name: o, n: fmt(ts) });
       } else {
-        B.push({ c: '', t: 'Duel lost' });
-        info = `${o} scored ${fmt(t)}. You needed ${fmt(Math.max(1, t - sc + 1))} more.`;
+        B.push({ c: '', t: t('badge.duelLost') });
+        info = t('info.lost', { name: o, n: fmt(ts), k: fmt(Math.max(1, ts - sc + 1)) });
       }
       cheer = d.won;
-      shareLine = d.won ? 'Duel won' : 'Duel lost';
+      shareLine = d.won ? t('badge.duelWon') : t('badge.duelLost');
       if (!rows.length)
         rows = [
-          { name: 'You', score: sc, me: true },
-          { name: o, score: t, me: false },
+          { name: t('you'), score: sc, me: true },
+          { name: o, score: ts, me: false },
         ]
           .sort((a, b) => b.score - a.score || Number(a.me) - Number(b.me))
           .map((r, i) => ({ place: i + 1, ...r }));
     }
     xpBadge();
-    again = 'Rematch';
+    again = t('rematch');
   } else if (mode === 'challenge' && res.challenge) {
     const c = res.challenge;
     opp = c.opponent || opp;
-    B.push(c.won ? { c: 'b1', t: 'Challenge won' } : { c: '', t: 'Challenge lost' });
-    info = c.won ? `You beat ${c.opponent}'s ${fmt(c.target)}. Send your score back to them.` : `${c.opponent} scored ${fmt(c.target)}. You needed ${fmt(Math.max(1, c.target - sc + 1))} more.`;
+    B.push(c.won ? { c: 'b1', t: t('badge.chalWon') } : { c: '', t: t('badge.chalLost') });
+    info = c.won ? t('info.chalWon', { name: c.opponent, n: fmt(c.target) }) : t('info.lost', { name: c.opponent, n: fmt(c.target), k: fmt(Math.max(1, c.target - sc + 1)) });
     xpBadge();
     cheer = c.won;
-    again = 'Try again';
-    shareLine = c.won ? 'Challenge won' : 'Challenge lost';
+    again = t('tryAgain');
+    shareLine = c.won ? t('badge.chalWon') : t('badge.chalLost');
   } else {
-    B.push({ c: '', t: 'Not recorded' });
+    B.push({ c: '', t: t('notRecorded') });
     // Practice shows the board as it stood when the run started (display only).
     if (!rows.length) {
       const list = targets.rows.map((r) => ({ name: r.n, score: r.s, me: false }));
-      if (targets.best > 0) list.push({ name: 'You', score: targets.best, me: true });
+      if (targets.best > 0) list.push({ name: t('you'), score: targets.best, me: true });
       rows = list.sort((a, b) => b.score - a.score).slice(0, 5).map((r, i) => ({ place: i + 1, ...r }));
     }
   }
   const lv = res.user.level, xp = res.user.xp;
   return {
-    title: titleFor(mode, opp), score: sc, badges: B, info, rows, level: lv, xpPct: pct(xp, lv), xpToGo: Math.max(0, levelCeil(lv) - xp), again,
+    title: titleFor(t, mode, opp), score: sc, badges: B, info, rows, level: lv, xpPct: pct(xp, lv), xpToGo: Math.max(0, levelCeil(lv) - xp), again,
     runId: res.status === 'finished' ? res.runId : null, shareLine, cheer,
   };
 }

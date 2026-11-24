@@ -4,6 +4,7 @@ import type { ChallengeResponse, CupResponse, GamesResponse } from '@podium/shar
 import { isGameKey } from '@podium/shared';
 import { emptyCup, emptyGames } from '@/lib/fallback';
 import { serverGet } from '@/lib/server-api';
+import { IdArea } from '@/i18n/IdArea';
 import { HomeView } from './HomeView';
 
 export const CODE_RE = /^[A-Za-z0-9_-]{4,32}$/;
@@ -16,5 +17,9 @@ export async function loadChallenge(code: string | undefined): Promise<Challenge
 
 export async function HomeScreen({ challengeCode }: { challengeCode?: string }) {
   const [games, cup, challenge] = await Promise.all([serverGet<GamesResponse>('/games'), serverGet<CupResponse>('/cup'), loadChallenge(challengeCode)]);
-  return <HomeView games={games && games.games.length ? games : emptyGames()} cup={cup ?? emptyCup()} challenge={challenge} />;
+  return (
+    <IdArea areas={['home']}>
+      <HomeView games={games && games.games.length ? games : emptyGames()} cup={cup ?? emptyCup()} challenge={challenge} />
+    </IdArea>
+  );
 }

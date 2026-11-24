@@ -3,12 +3,14 @@
 import type { Metadata } from 'next';
 import { BRAND, GAMES, fmt } from '@podium/shared';
 import { HomeScreen, loadChallenge } from '@/components/HomeScreen';
+import { serverT } from '@/i18n/server';
 
 export async function generateMetadata({ params }: { params: { code: string } }): Promise<Metadata> {
   const c = await loadChallenge(params.code);
-  if (!c) return { title: 'Challenge' };
-  const title = `${c.name} scored ${fmt(c.score)} in ${GAMES[c.game].name}`;
-  const description = `Can you beat this score? One run on ${BRAND.name}, free.`;
+  const t = serverT('pages');
+  if (!c) return { title: t('meta.challenge') };
+  const title = t('meta.challengeTitle', { name: c.name, score: fmt(c.score), game: GAMES[c.game].name });
+  const description = t('meta.challengeDesc', { brand: BRAND.name });
   const image = `/og/${encodeURIComponent(c.code)}`;
   return {
     title,

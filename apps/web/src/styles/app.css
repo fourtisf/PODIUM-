@@ -135,3 +135,15 @@ footer a{color:inherit}
 .adminActs{display:flex;gap:8px;flex-wrap:wrap}
 .admin .dh span small.sub{overflow-wrap:anywhere}
 .admin .runsTable table{min-width:820px}
+
+/* EN / ID language switch: the leaderboard's .seg tabs, small in the footer, normal on the profile. */
+.seg.langsw{margin:0;vertical-align:middle}
+footer .seg.langsw{padding:2px;gap:2px;border-radius:10px;margin-left:12px}
+footer .seg.langsw button{padding:3px 9px;border-radius:8px;font-size:12.5px;text-decoration:none}
+.prof .seg.langsw{margin:2px 0 0}
+/* Longer Indonesian labels must not wrap inside the header pills (English already fits on one line). */
+.hd .mark,.hd .nav a,.wallet button,.mechip small{white-space:nowrap}
+/* "Kotak" (Indonesian for the day-7 box pip) is wider than "Box". */
+html[lang="id"] .pips span:last-child{font-size:11px;letter-spacing:-.02em}
+/* Let the input give way to a longer button label ("Kirim kode") instead of pushing it out of the sheet. */
+.field input{min-width:0}.field .sbtn{flex-shrink:0;white-space:nowrap}

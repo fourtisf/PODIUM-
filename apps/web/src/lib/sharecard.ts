@@ -9,6 +9,10 @@ export interface ShareCardData {
   line: string;
   playerName: string;
   level: number;
+  /** "Level 4" in the visitor's language (default English). */
+  levelText?: string;
+  /** The line on the dark pill (default "Can you beat this score?"). */
+  cta?: string;
 }
 
 const DISP = '"Bricolage Grotesque Variable","Bricolage Grotesque",system-ui';
@@ -65,12 +69,12 @@ export function paintShareCard(c: HTMLCanvasElement, d: ShareCardData, img: Canv
   x.fillText(d.playerName, 710, 500);
   x.fillStyle = '#8f95ad';
   x.font = `600 22px ${BODY}`;
-  x.fillText('Level ' + d.level, 710, 534);
+  x.fillText(d.levelText ?? 'Level ' + d.level, 710, 534);
   x.fillStyle = '#0c0f26';
   rr(x, 710, 560, 430, 44, 22);
   x.fillStyle = '#fff';
   x.font = `700 20px ${BODY}`;
-  x.fillText('Can you beat this score?', 734, 589);
+  x.fillText(d.cta ?? 'Can you beat this score?', 734, 589);
 }
 
 /** Draws the card with the game's static cover and returns a PNG data URL (null when the browser blocks it). */

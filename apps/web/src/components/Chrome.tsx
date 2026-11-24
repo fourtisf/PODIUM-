@@ -8,19 +8,24 @@ import type { ActivityItem, NotificationItem } from '@podium/shared';
 import { api } from '@/lib/api';
 import { onlyBold } from '@/lib/sanitize';
 import { dedupeActivity, tickerScrolls } from '@/lib/ticker';
+import { useT } from '@/i18n/client';
+import { tickerText } from '@/i18n/content';
+import { commonEn } from '@/i18n/dict/common.en';
+import { LangSwitch } from './LangSwitch';
 import { useSession } from './Session';
 import { FramedAvatar, Mark } from './ui';
 
-const NAV: [href: string, label: string][] = [
-  ['/', 'Games'],
-  ['/duels', 'Duels'],
-  ['/leaderboard', 'Leaderboard'],
-  ['/shop', 'Shop'],
-  ['/rules', 'Rules'],
+const NAV: [href: string, label: keyof typeof commonEn][] = [
+  ['/', 'nav.games'],
+  ['/duels', 'nav.duels'],
+  ['/leaderboard', 'nav.board'],
+  ['/shop', 'nav.shop'],
+  ['/rules', 'nav.rules'],
 ];
 
 export function Header() {
   const { me, refresh, patchUser, toast, fail, chain, openWallet } = useSession();
+  const t = useT('common', commonEn);
   const pathname = usePathname() || '/';
   const [notesOn, setNotesOn] = useState(false);
   const [notes, setNotes] = useState<NotificationItem[] | null>(null);
@@ -74,7 +79,7 @@ export function Header() {
     try {
       const r = await api.refill();
       patchUser({ balance: r.balance });
-      toast(`Refilled. Your balance is ${fmt(r.balance)} tChips.`);
+      toast(t('hd.refilled', { n: fmt(r.balance) }));
       await refresh();
     } catch (e) {
       fail(e);
@@ -89,19 +94,19 @@ export function Header() {
     <>
       <header className="hd">
         <div className="wrap">
-          <Link className="mark" href="/" aria-label={`${BRAND.name} home`}>
+          <Link className="mark" href="/" aria-label={t('hd.home', { brand: BRAND.name })}>
             <Mark />
             <span className="brandN">{BRAND.name}</span>
           </Link>
-          <nav className="nav" aria-label="Main">
+          <nav className="nav" aria-label={t('hd.nav')}>
             {NAV.map(([href, label]) => (
               <Link key={href} href={href} className={isOn(href) ? 'on' : ''} aria-current={isOn(href) ? 'page' : undefined}>
-                {label}
+                {t(label)}
               </Link>
             ))}
           </nav>
           <XButton />
-          <button className="hbtn" id="bell" aria-label="Notifications" aria-expanded={notesOn} onClick={toggleNotes}>
+          <button className="hbtn" id="bell" aria-label={t('hd.bell')} aria-expanded={notesOn} onClick={toggleNotes}>
             <svg viewBox="0 0 20 20" aria-hidden="true">
               <path d="M5 8a5 5 0 0 1 10 0c0 4 1.5 5 1.5 5h-13S5 12 5 8M8.2 16a2 2 0 0 0 3.6 0" />
             </svg>
@@ -115,22 +120,22 @@ export function Header() {
             <span>tChips</span>
             {__CHAIN__ && chain ? (
               // Chain mode has no refill: the button opens the wallet sheet (deposit, withdraw, test tokens).
-              <button onClick={openWallet}>Wallet</button>
+              <button onClick={openWallet}>{t('hd.wallet')}</button>
             ) : (
               <button onClick={refill} disabled={busy || !me?.canRefill}>
-                Refill
+                {t('hd.refill')}
               </button>
             )}
           </div>
-          <Link className="mechip" href="/profile" aria-label="Profile">
+          <Link className="mechip" href="/profile" aria-label={t('hd.profile')}>
             <FramedAvatar id={u?.avatar ?? 0} frame={u?.frame ?? 'none'} size={30} />
-            <span>{u?.name ?? 'Guest'}</span>
-            <small>Lv {u?.level ?? 1}</small>
+            <span>{u?.name ?? t('hd.guest')}</span>
+            <small>{t('hd.lv', { n: u?.level ?? 1 })}</small>
           </Link>
         </div>
       </header>
-      <div id="notes" className={notesOn ? 'on' : ''} role="region" aria-label="Notifications">
-        <h4>Notifications</h4>
+      <div id="notes" className={notesOn ? 'on' : ''} role="region" aria-label={t('notes.title')}>
+        <h4>{t('notes.title')}</h4>
         <ul>
           {(notes ?? []).map((n) => (
             <li key={n.id} className={n.read ? '' : 'new'}>
@@ -138,13 +143,14 @@ export function Header() {
             </li>
           ))}
         </ul>
-        {(!notes || notes.length === 0) && <div className="empty">Nothing yet. Play a ranked run and rivals will start showing up here.</div>}
+        {(!notes || notes.length === 0) && <div className="empty">{t('notes.empty')}</div>}
       </div>
     </>
   );
 }
 
 export function Ticker({ initial }: { initial: ActivityItem[] }) {
+  const t = useT('common', commonEn);
   const [items, setItems] = useState(initial);
   useEffect(() => {
     const t = setInterval(() => {
@@ -160,7 +166,7 @@ export function Ticker({ initial }: { initial: ActivityItem[] }) {
     return (
       <div className="tick">
         <div className="quiet">
-          <span>No activity yet. Be the first on the board.</span>
+          <span>{t('tick.quiet')}</span>
         </div>
       </div>
     );
@@ -169,6 +175,7 @@ export function Ticker({ initial }: { initial: ActivityItem[] }) {
 }
 
 function TickerRow({ items }: { items: ActivityItem[] }) {
+  const t = useT('common', commonEn);
   const shown = dedupeActivity(items);
   const wrap = useRef<HTMLDivElement>(null);
   const track = useRef<HTMLDivElement>(null);
@@ -192,7 +199,7 @@ function TickerRow({ items }: { items: ActivityItem[] }) {
   const row = (k: string) =>
     shown.map((f, i) => (
       <span key={k + i}>
-        <b>{f.name}</b> {f.text} <i>{f.game}</i>
+        <b>{f.name}</b> {tickerText(f.text, t)} <i>{f.game}</i>
       </span>
     ));
   if (!scroll) {
@@ -219,6 +226,7 @@ const X_PATH = 'M14.2 10.5L22 1.5h-1.9l-6.8 7.8L8 1.5H1.8l8.2 11.9-8.2 9.4h1.9l7
 /** The X logo button in the header. Until the profile link is configured it says the account is coming soon. */
 function XButton() {
   const { toast } = useSession();
+  const t = useT('common', commonEn);
   const href = xUrl();
   const icon = (
     <svg viewBox="0 0 24 24" aria-hidden="true" style={{ fill: 'var(--ink)', stroke: 'none', width: 16, height: 16 }}>
@@ -226,11 +234,11 @@ function XButton() {
     </svg>
   );
   return href ? (
-    <a className="hbtn" href={href} target="_blank" rel="noopener noreferrer" aria-label={`${BRAND.name} on X`}>
+    <a className="hbtn" href={href} target="_blank" rel="noopener noreferrer" aria-label={t('x.on', { brand: BRAND.name })}>
       {icon}
     </a>
   ) : (
-    <button className="hbtn" aria-label={`${BRAND.name} on X, coming soon`} onClick={() => toast(`Our X account is coming soon.`)}>
+    <button className="hbtn" aria-label={t('x.soonAria', { brand: BRAND.name })} onClick={() => toast(t('x.soon'))}>
       {icon}
     </button>
   );
@@ -239,13 +247,14 @@ function XButton() {
 /** Slim bar under the ticker: the token contract address with a copy button, "Coming soon" until it is set. */
 export function CaBar() {
   const { toast } = useSession();
+  const t = useT('common', commonEn);
   const ca = tokenCa();
   const x = xUrl();
   const copy = () => {
     if (!ca) return;
-    const bad = () => toast('Copy failed. Select the address and copy it manually.');
+    const bad = () => toast(t('ca.copyFail'));
     try {
-      navigator.clipboard.writeText(ca).then(() => toast('Contract address copied.'), bad);
+      navigator.clipboard.writeText(ca).then(() => toast(t('ca.copied')), bad);
     } catch {
       bad();
     }
@@ -259,18 +268,18 @@ export function CaBar() {
             {ca}
           </code>
         ) : (
-          <span className="caval soon">Coming soon</span>
+          <span className="caval soon">{t('ca.soon')}</span>
         )}
-        <button className="cacopy" onClick={copy} disabled={!ca} aria-label={ca ? 'Copy contract address' : 'Contract address coming soon'}>
+        <button className="cacopy" onClick={copy} disabled={!ca} aria-label={ca ? t('ca.copyAria') : t('ca.soonAria')}>
           <svg viewBox="0 0 20 20" aria-hidden="true">
             <rect x="7" y="7" width="10" height="10" rx="2.5" />
             <path d="M13 4.5A1.5 1.5 0 0 0 11.5 3h-6A2.5 2.5 0 0 0 3 5.5v6A1.5 1.5 0 0 0 4.5 13" />
           </svg>
-          {ca ? 'Copy' : 'Soon'}
+          {ca ? t('ca.copy') : t('ca.soonBtn')}
         </button>
         {x && (
           <a className="cax" href={x} target="_blank" rel="noopener noreferrer">
-            Follow on X
+            {t('ca.follow')}
           </a>
         )}
       </div>
@@ -279,19 +288,21 @@ export function CaBar() {
 }
 
 export function Footer() {
+  const t = useT('common', commonEn);
   const x = xUrl();
   return (
     <footer>
       <div className="wrap">
-        {BRAND.name} beta. All amounts are tChips with no value. <Link href="/terms">Terms</Link> · <Link href="/privacy">Privacy</Link>
+        {t.rich('foot.line', { brand: BRAND.name, terms: <Link href="/terms">{t('foot.terms')}</Link>, privacy: <Link href="/privacy">{t('foot.privacy')}</Link> })}
         {x && (
           <>
             {' '}
             <a href={x} target="_blank" rel="noopener noreferrer">
-              Follow us on X
+              {t('foot.followX')}
             </a>
           </>
         )}
+        <LangSwitch />
       </div>
     </footer>
   );

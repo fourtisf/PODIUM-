@@ -4,75 +4,71 @@ import Link from 'next/link';
 import { BRAND } from '@podium/shared';
 import { Contact, Updated } from '@/components/Legal';
 import { CHAIN_ON } from '@/lib/chain';
+import { serverT } from '@/i18n/server';
 
-export const metadata: Metadata = { title: 'Privacy', alternates: { canonical: '/privacy' } };
+export function generateMetadata(): Metadata {
+  return { title: serverT('pages')('meta.privacy'), alternates: { canonical: '/privacy' } };
+}
 
 export default function PrivacyPage() {
   const name = BRAND.name;
+  const t = serverT('legal');
   return (
     <section className="view on legal" id="v-privacy">
-      <h1>Privacy</h1>
-      <p className="lede">What {name} stores about you, why, and who else sees it. We do not sell your data.</p>
+      <h1>{t('p.title')}</h1>
+      <p className="lede">{t('p.lede', { name })}</p>
       <Updated />
       <div className="about">
         <div className="panelx">
-          <h3>Your account</h3>
+          <h3>{t('p.h1')}</h3>
           <ul>
-            <li>Your email address, if you sign in by email or with Google. It is used to sign you in.</li>
-            <li>Your Google account id, if you sign in with Google. We ask Google for your id and email only.</li>
-            <li>Your Solana wallet address, if you sign in with or link a wallet. Signing in only signs a text message; it never sends a transaction.</li>
-            <li>Your display name, avatar and frame choices, that you confirmed you are 18 or older, and who invited you, if anyone.</li>
+            <li>{t('p.1a')}</li>
+            <li>{t('p.1b')}</li>
+            <li>{t('p.1c')}</li>
+            <li>{t('p.1d')}</li>
           </ul>
         </div>
         <div className="panelx">
-          <h3>Your play</h3>
+          <h3>{t('p.h2')}</h3>
           <ul>
-            <li>Every run: the game, mode, seed, score, the inputs you made (which key, at which frame) and its timing. We need the inputs to replay and check each run.</li>
-            <li>Your tChips balance and a ledger of every change to it, your XP, items, missions, streak, season rewards, duels, challenges and notifications.</li>
-            <li>Public to everyone: your display name, avatar, frame and scores on the boards, in duels, in the activity ticker, and when your best runs are offered to others as challenges to beat.</li>
+            <li>{t('p.2a')}</li>
+            <li>{t('p.2b')}</li>
+            <li>{t('p.2c')}</li>
           </ul>
         </div>
         <div className="panelx">
-          <h3>Abuse prevention</h3>
+          <h3>{t('p.h3')}</h3>
           <ul>
-            <li>Your IP address. The last one you used is kept on your account, and it is used to rate-limit requests and to spot many accounts run by one person.</li>
-            <li>A random device id that your browser creates. The server keeps only a hash of it, for the same reasons.</li>
-            <li>Runs that look automated are held for review, and people who run the site can look at an account&apos;s runs and ledger to decide.</li>
-            <li>Like most servers, ours keeps logs of requests and errors so we can fix problems.</li>
+            <li>{t('p.3a')}</li>
+            <li>{t('p.3b')}</li>
+            <li>{t('p.3c')}</li>
+            <li>{t('p.3d')}</li>
           </ul>
         </div>
         <div className="panelx">
-          <h3>Cookies and browser storage</h3>
+          <h3>{t('p.h4')}</h3>
           <ul>
-            <li>One cookie: the session cookie that keeps you signed in. It lasts 30 days from your last visit. There are no advertising or tracking cookies and no analytics.</li>
-            <li>A security token (CSRF) tied to that session, which the page sends with every change you make. It is kept in the page, not in a cookie.</li>
-            <li>In your browser&apos;s local storage: the device id above, whether sound is muted, which wallet app you chose, an invite code from a link you opened, the name you picked before signing in, and which games you have seen the how-to-play card for.</li>
+            <li>{t('p.4a')}</li>
+            <li>{t('p.4b')}</li>
+            <li>{t('p.4c')}</li>
           </ul>
         </div>
         <div className="panelx">
-          <h3>Who else gets data</h3>
+          <h3>{t('p.h5')}</h3>
           <ul>
-            <li>Our email provider, to send you a sign-in code when you sign in by email. The code expires after 10 minutes.</li>
-            <li>Google, when you choose to sign in with Google.</li>
-            {CHAIN_ON ? (
-              <li>A Solana test network (devnet) and its RPC provider, because the test token is switched on: your wallet address and your deposits and withdrawals are recorded there, and anything on that network is public.</li>
-            ) : (
-              <li>A Solana network provider only if the devnet test token is switched on. It is off now.</li>
-            )}
-            <li>Nobody else. We do not sell or rent your data, and we do not use it for advertising.</li>
+            <li>{t('p.5a')}</li>
+            <li>{t('p.5b')}</li>
+            {CHAIN_ON ? <li>{t('p.5chain')}</li> : <li>{t('p.5off')}</li>}
+            <li>{t('p.5d')}</li>
           </ul>
         </div>
         <div className="panelx">
-          <h3>How long we keep it</h3>
+          <h3>{t('p.h6')}</h3>
           <ul>
-            <li>Runs and the ledger are kept for as long as your account exists, so the boards and payouts stay fair and can be checked later.</li>
-            <li>Sign-in codes last 10 minutes; a session ends 30 days after your last visit; rate-limit counters last minutes. Database backups are kept for 14 days.</li>
-            <li>
-              To get a copy of your data, correct it, or delete your account, write to <Contact />. Deleting an account removes your profile, runs and ledger with it.
-            </li>
-            <li>
-              The rules for playing are in the <Link href="/terms">Terms</Link>.
-            </li>
+            <li>{t('p.6a')}</li>
+            <li>{t('p.6b')}</li>
+            <li>{t.rich('p.6c', { contact: <Contact /> })}</li>
+            <li>{t.rich('p.6d', { terms: <Link href="/terms">{t('p.terms')}</Link> })}</li>
           </ul>
         </div>
       </div>

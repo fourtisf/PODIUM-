@@ -5,6 +5,8 @@
 import { useEffect, useRef } from 'react';
 import { GAMES } from '@podium/shared';
 import type { GameKey } from '@podium/shared';
+import { useContent, useT } from '@/i18n/client';
+import { playEn } from '@/i18n/dict/play.en';
 
 const key = (game: GameKey): string => 'podium.tut.' + game;
 
@@ -27,6 +29,8 @@ export function markTutorialSeen(game: GameKey): void {
 
 export function TutorialCard({ game, onDone }: { game: GameKey; onDone(): void }) {
   const g = GAMES[game];
+  const gc = useContent().game(game);
+  const t = useT('play', playEn);
   const btn = useRef<HTMLButtonElement>(null);
   const done = useRef(onDone);
   done.current = onDone;
@@ -46,11 +50,11 @@ export function TutorialCard({ game, onDone }: { game: GameKey; onDone(): void }
   return (
     <div className="veil tut on" id="tut" role="dialog" aria-modal="true" aria-labelledby="tutT" onClick={() => done.current()}>
       <div className="rc">
-        <small>How to play</small>
+        <small>{t('tut.how')}</small>
         <h3 id="tutT">{g.name}</h3>
-        <p>{g.keys}</p>
+        <p>{gc.keys}</p>
         <div className="keys">
-          {g.ctl.map((c) => (
+          {gc.ctl.map((c) => (
             <div key={c[0]}>
               <kbd>{c[0]}</kbd>
               <span>{c[1]}</span>
@@ -65,9 +69,9 @@ export function TutorialCard({ game, onDone }: { game: GameKey; onDone(): void }
             done.current();
           }}
         >
-          Got it
+          {t('tut.ok')}
         </button>
-        <small className="tutHint">Space, Enter or tap to start</small>
+        <small className="tutHint">{t('tut.hint')}</small>
       </div>
     </div>
   );

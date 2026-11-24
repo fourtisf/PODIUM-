@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { ECONOMY, FRAMES, PAID_FRAMES, PREMIUM_AVATARS, fmt, isFrameKey } from '@podium/shared';
 import type { ShopBuyRequest, ShopResponse } from '@podium/shared';
 import { api } from '@/lib/api';
+import { useContent, useT } from '@/i18n/client';
+import { shopEn } from '@/i18n/dict/shop.en';
 import { useSession } from './Session';
 import { Avatar, BoxSvg, FrameSwatch } from './ui';
 
@@ -16,13 +18,14 @@ const fallbackShop = (): ShopResponse => ({
 });
 
 function Item({ art, name, sub, owned, price, busy, onBuy }: { art: React.ReactNode; name: string; sub: string; owned: boolean; price: number; busy: boolean; onBuy(): void }) {
+  const t = useT('shop', shopEn);
   return (
     <div className="item">
       {art}
       <b>{name}</b>
       <small>{sub}</small>
-      <button className={`sbtn ${owned ? 'lt' : ''}`} disabled={owned || busy} onClick={onBuy} aria-label={owned ? `${name}, owned` : `Buy ${name} for ${fmt(price)} tChips`}>
-        {owned ? 'Owned' : `${fmt(price)} tChips`}
+      <button className={`sbtn ${owned ? 'lt' : ''}`} disabled={owned || busy} onClick={onBuy} aria-label={owned ? t('ownedAria', { name }) : t('buyAria', { name, n: fmt(price) })}>
+        {owned ? t('owned') : t('price', { n: fmt(price) })}
       </button>
     </div>
   );
@@ -30,6 +33,8 @@ function Item({ art, name, sub, owned, price, busy, onBuy }: { art: React.ReactN
 
 export function ShopView({ initial }: { initial: ShopResponse | null }) {
   const s = useSession();
+  const t = useT('shop', shopEn);
+  const content = useContent();
   const [shop, setShop] = useState<ShopResponse>(initial ?? fallbackShop());
   const [busy, setBusy] = useState('');
   useEffect(() => {
@@ -44,21 +49,21 @@ export function ShopView({ initial }: { initial: ShopResponse | null }) {
     const key = `${req.kind}:${req.id ?? ''}`;
     if (busy || !s.needAccount()) return;
     if (s.me && s.me.user.balance < price) {
-      s.toast('Not enough tChips for that.');
+      s.toast(t('low'));
       return;
     }
     setBusy(key);
     try {
       const r = await api.shopBuy(req);
       s.patchUser({ balance: r.balance, boxes: r.boxes });
-      if (req.kind === 'box') s.toast('Mystery box bought. Open it from your profile.');
+      if (req.kind === 'box') s.toast(t('boxBought'));
       else {
         // Equip what was just bought, as the prototype does.
         try {
           await api.patchMe(req.kind === 'avatar' ? { avatar: Number(req.id) } : { frame: String(req.id) });
-          s.toast('Bought and equipped.');
+          s.toast(t('equipped'));
         } catch {
-          s.toast('Bought. Equip it from your profile.');
+          s.toast(t('bought'));
         }
       }
       await Promise.all([s.refresh(), api.shop().then(setShop, () => undefined)]);
@@ -71,25 +76,27 @@ export function ShopView({ initial }: { initial: ShopResponse | null }) {
 
   return (
     <section className="view on" id="v-shop">
-      <h1>Shop</h1>
+      <h1>{t('title')}</h1>
       <p className="lede">
-        Spend tChips on avatars, frames and mystery boxes. A tenth of every purchase is burned:{' '}
-        <b className="num" id="burnT" style={{ color: 'var(--ink)' }}>
-          {fmt(shop.burned)}
-        </b>{' '}
-        tChips so far.
+        {t.rich('lede', {
+          n: (
+            <b className="num" id="burnT" style={{ color: 'var(--ink)' }}>
+              {fmt(shop.burned)}
+            </b>
+          ),
+        })}
       </p>
       <div className="shopg" id="shopG">
-        <Item art={<BoxSvg size={56} />} name="Mystery box" sub="tChips, XP or a rare cosmetic" owned={false} price={shop.box.price} busy={busy === 'box:'} onBuy={() => buy({ kind: 'box' }, shop.box.price)} />
+        <Item art={<BoxSvg size={56} />} name={t('box')} sub={t('boxSub')} owned={false} price={shop.box.price} busy={busy === 'box:'} onBuy={() => buy({ kind: 'box' }, shop.box.price)} />
         {shop.avatars.map((a) => (
-          <Item key={a.id} art={<Avatar id={a.id} size={56} />} name={a.name} sub="Avatar" owned={a.owned} price={a.price} busy={busy === `avatar:${a.id}`} onBuy={() => buy({ kind: 'avatar', id: a.id }, a.price)} />
+          <Item key={a.id} art={<Avatar id={a.id} size={56} />} name={content.avatar(a.id, a.name)} sub={t('avatar')} owned={a.owned} price={a.price} busy={busy === `avatar:${a.id}`} onBuy={() => buy({ kind: 'avatar', id: a.id }, a.price)} />
         ))}
         {shop.frames.map((f) => (
           <Item
             key={f.id}
             art={<FrameSwatch css={isFrameKey(f.id) ? FRAMES[f.id].css : 'var(--surf2)'} />}
-            name={f.name}
-            sub="Profile frame"
+            name={content.frame(f.id, f.name)}
+            sub={t('frame')}
             owned={f.owned}
             price={f.price}
             busy={busy === `frame:${f.id}`}

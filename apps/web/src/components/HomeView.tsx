@@ -6,18 +6,22 @@ import Link from 'next/link';
 import { BRAND, ECONOMY, GAMES, GAME_KEYS, STREAK, STREAK_BOX_INDEX, dayNum, fmt, missionsForDay } from '@podium/shared';
 import type { ChallengeResponse, CupResponse, GameCard, GameKey, GamesResponse, MissionState } from '@podium/shared';
 import { api } from '@/lib/api';
-import { endsCup, endsLong } from '@/lib/format';
 import { useNow } from '@/lib/hooks';
+import { useContent, useT } from '@/i18n/client';
+import { endsText } from '@/i18n/content';
+import { commonEn } from '@/i18n/dict/common.en';
+import { homeEn } from '@/i18n/dict/home.en';
 import { useSession } from './Session';
 import { Cover } from './ui';
 
 function Top3({ card, myName, style }: { card: GameCard; myName?: string; style?: React.CSSProperties }) {
+  const t = useT('home', homeEn);
   return (
     <ol className="top3" style={style}>
       {card.top3.length === 0 && (
         <li className="none">
           <span className="pos">–</span>
-          <span className="nm">No scores yet</span>
+          <span className="nm">{t('top3.none')}</span>
         </li>
       )}
       {card.top3.map((r, i) => (
@@ -38,6 +42,9 @@ export function HomeView({ games: initialGames, cup: initialCup, challenge }: { 
   const [cup, setCup] = useState(initialCup);
   const [busy, setBusy] = useState('');
   const now = useNow(initialGames.serverTime);
+  const t = useT('home', homeEn);
+  const tc = useT('common', commonEn);
+  const content = useContent();
   useEffect(() => setGames(initialGames), [initialGames]);
   useEffect(() => setCup(initialCup), [initialCup]);
   useEffect(() => {
@@ -47,8 +54,8 @@ export function HomeView({ games: initialGames, cup: initialCup, challenge }: { 
 
   const by = Object.fromEntries(games.games.map((g) => [g.key, g])) as Record<GameKey, GameCard>;
   const heroKey = by[games.hero] ? games.hero : games.games[0]!.key;
-  const hero = by[heroKey], hg = GAMES[heroKey];
-  const ends = endsLong(hero.endsAt, now);
+  const hero = by[heroKey], hg = GAMES[heroKey], hgc = content.game(heroKey);
+  const ends = endsText(tc, 'long', hero.endsAt, now);
   const featured = GAME_KEYS.filter((k) => k !== heroKey && GAMES[k].featured && by[k]).sort((a, b) => Number(GAMES[b].isNew) - Number(GAMES[a].isNew));
   const classics = GAME_KEYS.filter((k) => !GAMES[k].featured && by[k]);
   const myName = me?.user.name;
@@ -75,13 +82,13 @@ export function HomeView({ games: initialGames, cup: initialCup, challenge }: { 
     act('streak', async () => {
       const r = await api.claimStreak();
       s.patchUser({ balance: r.balance, boxes: r.boxes });
-      s.toast(`Day ${r.day} streak: +${fmt(r.chips)} tChips${r.box ? ' and a mystery box' : ''}`);
+      s.toast(t(r.box ? 'streak.toastBox' : 'streak.toast', { day: r.day, chips: fmt(r.chips) }));
     });
   const claimMission = (id: string) =>
     act('m' + id, async () => {
       const r = await api.claimMission(id);
       s.patchUser({ balance: r.balance, boxes: r.boxes });
-      s.toast(`+${fmt(r.chips)} tChips, +${r.xp} XP${r.bonusBox ? ', and a mystery box for clearing all three' : ''}`);
+      s.toast(t(r.bonusBox ? 'mission.toastBox' : 'mission.toast', { chips: fmt(r.chips), xp: r.xp }));
     });
 
   const cg = GAMES[cup.game];
@@ -99,34 +106,35 @@ export function HomeView({ games: initialGames, cup: initialCup, challenge }: { 
     <section className="view on" id="v-games">
       <div className="today" id="today">
         <div className="panelx">
-          <h3>Daily streak</h3>
+          <h3>{t('streak.title')}</h3>
           <p>
             {st.claimedToday
-              ? `Day ${st.nextDay} claimed. Come back tomorrow to keep it going.`
-              : `Claim day ${st.nextDay} for ${st.amount} tChips${st.box || sIdx === STREAK_BOX_INDEX ? ' and a mystery box' : ''}.`}
+              ? t('streak.claimed', { day: st.nextDay })
+              : t(st.box || sIdx === STREAK_BOX_INDEX ? 'streak.claimBox' : 'streak.claim', { day: st.nextDay, n: st.amount })}
           </p>
           <div className="pips">
             {STREAK.map((a, i) => (
               <span key={i} className={i < (st.claimedToday ? sIdx + 1 : sIdx) ? 'done' : i === sIdx && !st.claimedToday ? 'next' : ''}>
-                {i === STREAK_BOX_INDEX ? 'Box' : a}
+                {i === STREAK_BOX_INDEX ? t('streak.box') : a}
               </span>
             ))}
           </div>
           <button className="sbtn" id="stClaim" disabled={st.claimedToday || busy === 'streak'} onClick={claimStreak}>
-            {st.claimedToday ? 'Claimed today' : "Claim today's reward"}
+            {st.claimedToday ? t('streak.claimedBtn') : t('streak.claimBtn')}
           </button>
         </div>
         <div className="panelx">
-          <h3>Today&apos;s missions</h3>
+          <h3>{t('missions.title')}</h3>
           <p>
-            Clear all three for a mystery box. {free > 0 ? `You have ${free} free practice ${free > 1 ? 'runs' : 'run'} left.` : ''}
+            {t('missions.lede')}
+            {free > 0 ? t(free > 1 ? 'missions.freeMany' : 'missions.freeOne', { n: free }) : ''}
           </p>
           {missions.map((m) => {
             const done = m.progress >= m.target;
             return (
               <div className="mis" key={m.id}>
                 <div>
-                  <b>{m.title}</b>{' '}
+                  <b>{content.mission(m.id, m.title)}</b>{' '}
                   <small>
                     {Math.min(m.progress, m.target)}/{m.target}
                   </small>
@@ -135,7 +143,7 @@ export function HomeView({ games: initialGames, cup: initialCup, challenge }: { 
                   </div>
                 </div>
                 <button className={`sbtn ${done && !m.claimed ? '' : 'lt'}`} disabled={!(done && !m.claimed) || busy === 'm' + m.id} onClick={() => claimMission(m.id)}>
-                  {m.claimed ? 'Claimed' : `${m.chips} tChips`}
+                  {m.claimed ? t('missions.claimed') : `${m.chips} tChips`}
                 </button>
               </div>
             );
@@ -149,24 +157,24 @@ export function HomeView({ games: initialGames, cup: initialCup, challenge }: { 
         </div>
         <div className="side">
           <div className="tagrow">
-            <span className="tag live">Biggest pool this week</span>
-            <span className="tag">{hg.tag}</span>
+            <span className="tag live">{t('hero.tag')}</span>
+            <span className="tag">{hgc.tag}</span>
           </div>
           <h1>{hg.name}</h1>
-          <p>{hg.desc}</p>
+          <p>{hgc.desc}</p>
           <Top3 card={hero} myName={myName} style={{ margin: '22px 0 0' }} />
           <div className="poolbox">
-            <small>Prize pool, ends in {ends}</small>
+            <small>{t('hero.pool', { ends })}</small>
             <div className="num">
               {fmt(hero.pool)}
               <em>tChips</em>
             </div>
             <div className="cta">
               <button className="btn go" onClick={() => s.openSheet(heroKey, hero.pool)}>
-                Play now
+                {t('hero.play')}
               </button>
               <Link className="btn alt" href={`/leaderboard?game=${heroKey}`}>
-                View leaderboard
+                {t('hero.board')}
               </Link>
             </div>
           </div>
@@ -178,67 +186,66 @@ export function HomeView({ games: initialGames, cup: initialCup, challenge }: { 
           <Cover game={cup.game} />
         </div>
         <div>
-          <span className="tag">This week&apos;s cup</span>
-          <h3>
-            {BRAND.name} Cup: {cg.name}
-          </h3>
-          <p>One game, a bigger pool, and the top five get paid. Entry is {cup.entry} tChips.</p>
+          <span className="tag">{t('cup.tag')}</span>
+          <h3>{t('cup.title', { brand: BRAND.name, game: cg.name })}</h3>
+          <p>{t('cup.lede', { n: cup.entry })}</p>
           <div className="meta">
             <div>
-              <small>Pool</small>
+              <small>{t('cup.pool')}</small>
               <b className="num">{fmt(cup.pool)}</b>
             </div>
             <div>
-              <small>First place</small>
+              <small>{t('cup.first')}</small>
               <b className="num">{fmt(cup.payouts[0] ?? 0)}</b>
             </div>
             <div>
-              <small>Ends in</small>
-              <b className="num">{endsCup(cup.period.endAt, now)}</b>
+              <small>{t('cup.ends')}</small>
+              <b className="num">{endsText(tc, 'cup', cup.period.endAt, now)}</b>
             </div>
             <div>
-              <small>Your place</small>
-              <b className="num">{cup.me ? '#' + cup.me.place : 'Not entered'}</b>
+              <small>{t('cup.place')}</small>
+              <b className="num">{cup.me ? '#' + cup.me.place : t('cup.notEntered')}</b>
             </div>
           </div>
         </div>
         <button className="btn" id="cupGo" onClick={() => s.play(cup.game, 'cup')}>
-          Enter the cup <b className="num">{cup.entry}</b>
+          {t('cup.enter')} <b className="num">{cup.entry}</b>
         </button>
       </div>
 
       <div className="sec">
-        <h2>Featured</h2>
+        <h2>{t('featured.title')}</h2>
         <span className="cnt" id="count">
           {featured.length}
         </span>
         <p>
-          Weekly pools, ending <span id="endsA">in {ends}</span>
+          {t('featured.lede')}
+          <span id="endsA">{t('featured.in', { ends })}</span>
         </p>
       </div>
       <div className="cards" id="cards">
         {featured.map((k) => {
-          const g = GAMES[k], c = by[k];
+          const g = GAMES[k], c = by[k], gc = content.game(k);
           return (
             <article className="gc" key={k}>
               <div className="cover">
                 <Cover game={k} />
-                {g.isNew && <span className="newp">New</span>}
+                {g.isNew && <span className="newp">{t('card.new')}</span>}
                 <div className="pill">
                   <i className="chip" />
-                  Pool <b className="num">{fmt(c.pool)}</b>
+                  {t('card.pool')} <b className="num">{fmt(c.pool)}</b>
                 </div>
               </div>
               <div className="in">
                 <h3>{g.name}</h3>
-                <p className="d">{g.desc}</p>
+                <p className="d">{gc.desc}</p>
                 <Top3 card={c} myName={myName} />
                 <div className="cta">
-                  <button className="btn go" onClick={() => s.play(k, 'ranked')} aria-label={`Play ${g.name} ranked for ${ECONOMY.rankedEntry} tChips`}>
-                    Ranked <b className="num">{ECONOMY.rankedEntry}</b>
+                  <button className="btn go" onClick={() => s.play(k, 'ranked')} aria-label={t('card.rankedAria', { game: g.name, n: ECONOMY.rankedEntry })}>
+                    {t('card.ranked')} <b className="num">{ECONOMY.rankedEntry}</b>
                   </button>
-                  <button className="btn alt" onClick={() => s.play(k, 'practice')} aria-label={`Practice ${g.name}`}>
-                    Practice <b className="num">{__CHAIN__ && s.chain ? 'free' : ECONOMY.practiceEntry}</b>
+                  <button className="btn alt" onClick={() => s.play(k, 'practice')} aria-label={t('card.practiceAria', { game: g.name })}>
+                    {t('card.practice')} <b className="num">{__CHAIN__ && s.chain ? t('card.free') : ECONOMY.practiceEntry}</b>
                   </button>
                 </div>
               </div>
@@ -248,8 +255,8 @@ export function HomeView({ games: initialGames, cup: initialCup, challenge }: { 
       </div>
 
       <div className="sec">
-        <h2>Classics</h2>
-        <p>Quick games with their own pools</p>
+        <h2>{t('classics.title')}</h2>
+        <p>{t('classics.lede')}</p>
       </div>
       <div className="mini" id="classics">
         {classics.map((k) => {
@@ -261,15 +268,13 @@ export function HomeView({ games: initialGames, cup: initialCup, challenge }: { 
               </div>
               <div>
                 <b>{GAMES[k].name}</b>
-                <small>
-                  Pool {fmt(c.pool)}, best {fmt(c.myBest ?? 0)}
-                </small>
+                <small>{t('classics.meta', { pool: fmt(c.pool), best: fmt(c.myBest ?? 0) })}</small>
                 <div className="row">
-                  <button className="sbtn" onClick={() => s.play(k, 'ranked')} aria-label={`Play ${GAMES[k].name} ranked for ${ECONOMY.rankedEntry} tChips`}>
-                    Ranked {ECONOMY.rankedEntry}
+                  <button className="sbtn" onClick={() => s.play(k, 'ranked')} aria-label={t('card.rankedAria', { game: GAMES[k].name, n: ECONOMY.rankedEntry })}>
+                    {t('classics.ranked', { n: ECONOMY.rankedEntry })}
                   </button>
-                  <button className="sbtn lt" onClick={() => s.play(k, 'practice')} aria-label={`Practice ${GAMES[k].name}`}>
-                    Practice
+                  <button className="sbtn lt" onClick={() => s.play(k, 'practice')} aria-label={t('card.practiceAria', { game: GAMES[k].name })}>
+                    {t('card.practice')}
                   </button>
                 </div>
               </div>

@@ -7,8 +7,11 @@ import { EndsIn } from '@/components/EndsIn';
 import { FramedAvatar } from '@/components/ui';
 import { emptyBoard } from '@/lib/fallback';
 import { serverGet } from '@/lib/server-api';
+import { serverT } from '@/i18n/server';
 
-export const metadata: Metadata = { title: "This week's leaderboard" };
+export function generateMetadata(): Metadata {
+  return { title: serverT('pages')('meta.board') };
+}
 
 export default async function LeaderboardPage({ searchParams }: { searchParams: { game?: string | string[] } }) {
   const q = Array.isArray(searchParams.game) ? searchParams.game[0] : searchParams.game;
@@ -16,15 +19,16 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
   const [fetched, me] = await Promise.all([serverGet<BoardResponse>(`/leaderboard/${tab}`), serverGet<MeResponse>('/me')]);
   const board = fetched ?? emptyBoard(tab);
   const myId = me?.user.id;
+  const t = serverT('pages');
   return (
     <section className="view on" id="v-board">
       <h1>
-        This week&apos;s leaderboard
-        <span className="tag" title="Boards are in beta while score validation builds up history.">
-          Beta
+        {t('lb.title')}
+        <span className="tag" title={t('lb.betaTitle')}>
+          {t('lb.beta')}
         </span>
       </h1>
-      <p className="lede">The top three scores split the pool when the week ends. Only your best score counts.</p>
+      <p className="lede">{t('lb.lede')}</p>
       <div className="seg" id="tabs">
         {GAME_KEYS.map((k) => (
           <Link key={k} href={`/leaderboard?game=${k}`} scroll={false} className={k === tab ? 'on' : ''} aria-current={k === tab ? 'page' : undefined}>
@@ -34,20 +38,20 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
       </div>
       <div className="lb">
         <div className="panelx">
-          <small style={{ color: 'var(--dim)' }}>Prize pool</small>
+          <small style={{ color: 'var(--dim)' }}>{t('lb.pool')}</small>
           <b className="num big" id="pPool">
             {fmt(board.pool)}
           </b>
           <div className="kv">
-            <span>Paid to the top three</span>
+            <span>{t('lb.paid')}</span>
             <b className="num">{fmt(board.pool - board.fee)}</b>
           </div>
           <div className="kv">
-            <span>Platform fee {Math.round(ECONOMY.fee * 100)}%</span>
+            <span>{t('lb.fee', { n: Math.round(ECONOMY.fee * 100) })}</span>
             <b className="num">{fmt(board.fee)}</b>
           </div>
           <div className="kv">
-            <span>Ends in</span>
+            <span>{t('lb.ends')}</span>
             <b className="num">
               <EndsIn to={board.period.endAt} serverTime={new Date().toISOString()} />
             </b>
@@ -57,17 +61,17 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
           <table>
             <thead>
               <tr>
-                <th>Place</th>
-                <th>Player</th>
-                <th className="r">Score</th>
-                <th className="r">Prize</th>
+                <th>{t('lb.place')}</th>
+                <th>{t('lb.player')}</th>
+                <th className="r">{t('lb.score')}</th>
+                <th className="r">{t('lb.prize')}</th>
               </tr>
             </thead>
             <tbody id="board">
               {board.rows.length === 0 && (
                 <tr>
                   <td className="none" colSpan={4}>
-                    No scores yet this week.
+                    {t('lb.none')}
                   </td>
                 </tr>
               )}
