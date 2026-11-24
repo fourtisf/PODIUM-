@@ -43,5 +43,6 @@ export const homeEn = {
   'classics.title': 'Classics',
   'classics.lede': 'Quick games with their own pools',
   'classics.meta': 'Pool {pool}, best {best}',
+  'classics.bot': 'to beat {name} {n}',
   'classics.ranked': 'Ranked {n}',
 } as const;

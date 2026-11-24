@@ -126,4 +126,8 @@ export const commonEn = {
   'wallet.noExt': 'No Solana wallet found in this browser.',
   'menu.signIn': 'Sign in',
   'menu.signOut': 'Sign out',
+  'bot.chip': 'BOT',
+  'bot.name': '{name} (bot)',
+  'bot.title': '{name}: a bot benchmark, not a player',
+  'bot.note': "Rows marked BOT are bot benchmarks for you to beat. They don't take places or prizes.",
 } as const;

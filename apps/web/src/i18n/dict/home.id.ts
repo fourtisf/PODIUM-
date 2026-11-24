@@ -45,5 +45,6 @@ export const homeId = {
   'classics.title': 'Klasik',
   'classics.lede': 'Game singkat dengan pool masing-masing',
   'classics.meta': 'Pool {pool}, terbaik {best}',
+  'classics.bot': 'kalahkan {name} {n}',
   'classics.ranked': 'Ranked {n}',
 } as const satisfies Dict<typeof homeEn>;

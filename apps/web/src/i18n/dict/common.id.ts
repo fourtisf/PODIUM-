@@ -127,4 +127,8 @@ export const commonId = {
   'wallet.noExt': 'Tidak ada dompet Solana di browser ini.',
   'menu.signIn': 'Masuk',
   'menu.signOut': 'Keluar',
+  'bot.chip': 'BOT',
+  'bot.name': '{name} (bot)',
+  'bot.title': '{name}: patokan bot, bukan pemain',
+  'bot.note': 'Baris bertanda BOT adalah patokan bot untuk kamu kalahkan. Bot tidak mengambil peringkat atau hadiah.',
 } as const satisfies Dict<typeof commonEn>;

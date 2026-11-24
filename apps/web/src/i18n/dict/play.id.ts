@@ -9,6 +9,7 @@ export const playId = {
   'mode.practice': 'Latihan',
   'fx.pb': 'Rekor pribadi baru',
   'fx.passed': 'Melewati {name}',
+  'fx.beatBot': '{name} terkalahkan!',
   'fx.go': 'Mulai',
   'hud.yourBest': 'Terbaikmu {n}',
   'hud.beat': 'Kalahkan {name} {n}',

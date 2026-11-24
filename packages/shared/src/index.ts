@@ -6,3 +6,5 @@ export * from './season';
 export * from './time';
 export * from './names';
 export * from './api';
+export * from './bots';
+export * from './botCast';

@@ -7,6 +7,7 @@ export const playEn = {
   'mode.practice': 'Practice',
   'fx.pb': 'New personal best',
   'fx.passed': 'Passed {name}',
+  'fx.beatBot': 'Beat {name}!',
   'fx.go': 'Go',
   'hud.yourBest': 'Your best {n}',
   'hud.beat': 'Beat {name} {n}',

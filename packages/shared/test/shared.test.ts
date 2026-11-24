@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BOT_CAST, BOT_LADDER,
   CUP_GAMES, ECONOMY, GAME_KEYS, MISSIONS, SEASON, cupGame, cupStart, dayNum, duelFee, duelPayout, levelOf,
   missionsForDay, periodEnd, projectedPrize, scaleEmission, splitPool, validateName, weeklyStart,
 } from '../src';
@@ -96,5 +97,24 @@ describe('social links', () => {
     expect(tokenCa('')).toBeNull();
     expect(tokenCa('0x52908400098527886E0F7030069857D2E4169EE7')).toBeNull();
     expect(tokenCa('coming soon')).toBeNull();
+  });
+});
+
+describe('bot benchmarks (display only)', () => {
+  it('has ten strictly increasing positive integers per game (Lv 1 .. Lv 10)', () => {
+    for (const k of GAME_KEYS) {
+      const l = BOT_LADDER[k];
+      expect(l, k).toHaveLength(10);
+      for (const v of l) expect(Number.isInteger(v) && v > 0, k).toBe(true);
+      for (let i = 1; i < l.length; i++) expect(l[i]!, k).toBeGreaterThan(l[i - 1]!);
+    }
+  });
+
+  it('has ten distinct bot characters, one per level', () => {
+    expect(BOT_CAST.map((b) => b.level)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(new Set(BOT_CAST.map((b) => b.name)).size).toBe(10);
+    expect(new Set(BOT_CAST.map((b) => b.avatar)).size).toBe(10);
+    // Bot names can never be mistaken for generated player names.
+    for (const b of BOT_CAST) expect(/^(guest|player)/i.test(b.name)).toBe(false);
   });
 });

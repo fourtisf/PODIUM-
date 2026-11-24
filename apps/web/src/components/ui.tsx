@@ -57,3 +57,19 @@ export function FrameSwatch({ css, size, style }: { css: string; size?: number; 
     </div>
   );
 }
+
+/** A bot benchmark's avatar: one of the site's avatars with Bolt's robot badge on it, so it never reads as a player. */
+export function BotAvatar({ id, size }: { id: number; size: number }) {
+  return (
+    <span className="avw botav">
+      <Avatar id={id} size={size} />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img className="botbadge" src="/brand/robot.svg" alt="" width={14} height={14} aria-hidden="true" />
+    </span>
+  );
+}
+
+/** The "BOT" chip next to every bot benchmark's name. */
+export function BotChip({ label }: { label: string }) {
+  return <span className="botchip">{label}</span>;
+}
