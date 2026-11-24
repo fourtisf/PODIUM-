@@ -12,6 +12,8 @@ import { useT } from '@/i18n/client';
 import { tickerText } from '@/i18n/content';
 import { commonEn } from '@/i18n/dict/common.en';
 import { LangSwitch } from './LangSwitch';
+import WalletPicker from './WalletPicker';
+import { useWalletActions } from './useWalletActions';
 import { useSession } from './Session';
 import { FramedAvatar, Mark } from './ui';
 
@@ -127,11 +129,7 @@ export function Header() {
               </button>
             )}
           </div>
-          <Link className="mechip" href="/profile" aria-label={t('hd.profile')}>
-            <FramedAvatar id={u?.avatar ?? 0} frame={u?.frame ?? 'none'} size={30} />
-            <span>{u?.name ?? t('hd.guest')}</span>
-            <small>{t('hd.lv', { n: u?.level ?? 1 })}</small>
-          </Link>
+          <PlayerMenu />
         </div>
       </header>
       <div id="notes" className={notesOn ? 'on' : ''} role="region" aria-label={t('notes.title')}>
@@ -217,6 +215,93 @@ function TickerRow({ items }: { items: ActivityItem[] }) {
         {row('a')}
         {row('b')}
       </div>
+    </div>
+  );
+}
+
+/** The player chip in the header: opens a small menu with profile, wallet and sign-in/out. */
+function PlayerMenu() {
+  const s = useSession();
+  const t = useT('common', commonEn);
+  const u = s.me?.user;
+  const { busy, link, disconnect, chainOn } = useWalletActions();
+  const [open, setOpen] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const signedIn = !!u && !u.guest;
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      const el = e.target as Element | null;
+      if (el?.closest && !el.closest('#memenu') && !el.closest('#mechip')) setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    // Listen from the next tick: the click that opened the menu must not close it again
+    // (React may re-render the avatar under the pointer, detaching the click target).
+    const id = setTimeout(() => addEventListener('click', close));
+    addEventListener('keydown', esc);
+    return () => {
+      clearTimeout(id);
+      removeEventListener('click', close);
+      removeEventListener('keydown', esc);
+    };
+  }, [open]);
+  const short = (a: string) => `${a.slice(0, 4)}…${a.slice(-4)}`;
+  return (
+    <div className="mewrap">
+      <button className="mechip" id="mechip" aria-label={t('hd.profile')} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <FramedAvatar id={u?.avatar ?? 0} frame={u?.frame ?? 'none'} size={30} />
+        <span>{u?.name ?? t('hd.guest')}</span>
+        <small>{t('hd.lv', { n: u?.level ?? 1 })}</small>
+      </button>
+      {open && (
+        <div id="memenu" role="menu" aria-label={t('hd.profile')}>
+          <div className="mehead">
+            <FramedAvatar id={u?.avatar ?? 0} frame={u?.frame ?? 'none'} size={40} />
+            <div>
+              <b>{u?.name ?? t('hd.guest')}</b>
+              <small>{u?.wallet ? short(u.wallet) : t('hd.lv', { n: u?.level ?? 1 })}</small>
+            </div>
+          </div>
+          <Link role="menuitem" href="/profile" onClick={() => setOpen(false)}>
+            {t('hd.profile')}
+          </Link>
+          {signedIn && u?.wallet && !chainOn && (
+            <button role="menuitem" disabled={busy} onClick={() => void disconnect().then(() => setOpen(false))}>
+              {t('wallet.disconnect')}
+            </button>
+          )}
+          {signedIn && !u?.wallet && (
+            <button role="menuitem" disabled={busy} onClick={() => setPicking(true)}>
+              {t('wallet.connect')}
+            </button>
+          )}
+          {signedIn ? (
+            <button role="menuitem" className="danger" disabled={busy} onClick={() => void s.signOut().then(() => setOpen(false))}>
+              {t('menu.signOut')}
+            </button>
+          ) : (
+            <button
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                s.openSignIn();
+              }}
+            >
+              {t('menu.signIn')}
+            </button>
+          )}
+        </div>
+      )}
+      {picking && (
+        <WalletPicker
+          onClose={() => setPicking(false)}
+          onPick={() => {
+            setPicking(false);
+            setOpen(false);
+            void link();
+          }}
+        />
+      )}
     </div>
   );
 }

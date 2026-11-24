@@ -228,3 +228,17 @@ body.touch #ov:fullscreen .stage{height:min(calc(100dvh - 104px),calc((100vw - 1
 .wpanel .wdot{width:28px;height:28px;border-radius:8px;background:var(--ink);flex:none}
 .wpanel .fine:empty{display:none}
 .wpanel .fine{margin:0}
+
+/* header player menu */
+.mewrap{position:relative;flex:none}
+button.mechip{cursor:pointer;color:inherit;font:inherit;font-weight:600;font-size:14px}
+#memenu{position:absolute;right:0;top:calc(100% + 10px);width:240px;background:#fff;border:1px solid var(--rule);border-radius:18px;box-shadow:0 30px 70px -20px rgba(12,15,38,.35);z-index:31;padding:8px;display:flex;flex-direction:column}
+#memenu .mehead{display:flex;align-items:center;gap:10px;padding:8px 10px 12px;border-bottom:1px solid var(--rule);margin-bottom:6px}
+#memenu .mehead b{display:block;font-size:15px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#memenu .mehead small{color:var(--dim);font-weight:600;font-size:12.5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+#memenu a,#memenu button{display:block;width:100%;text-align:left;padding:10px 12px;border-radius:12px;font-weight:600;font-size:14.5px;color:var(--ink);text-decoration:none;background:none;border:0;cursor:pointer;font-family:inherit}
+#memenu a:hover,#memenu button:hover:not(:disabled){background:var(--surf2)}
+#memenu button:disabled{color:var(--dim);cursor:default}
+#memenu .danger{color:#d81f5c}
+/* On phones the prototype hides every span in the chip, which also hid the avatar; keep it visible. */
+@media(max-width:640px){.mechip span.avw{display:inline-grid}.mechip small{display:none}}
