@@ -176,7 +176,7 @@ export const contentId = {
   nameErrors: {
     length: 'Nama terdiri dari 3 sampai 16 karakter.',
     chars: 'Gunakan hanya huruf, angka, spasi, garis bawah, titik, dan tanda hubung.',
-    reserved: 'Nama tidak boleh diawali "Guest" atau "Player".',
+    reserved: 'Nama tidak boleh diawali "Guest" atau "Player", atau memakai nama bot.',
   } satisfies Record<NameError, string>,
   /** Words the games flash on the stage (packages/games fx text). "Level N" is matched as a pattern. */
   fx: {

@@ -77,6 +77,9 @@ describe('names', () => {
     expect(validateName('Guest123')).toBe('reserved');
     expect(validateName('player one')).toBe('reserved');
     expect(validateName('bad<name>')).toBe('chars');
+    expect(validateName('Bolt')).toBe('reserved');
+    expect(validateName('gizmo')).toBe('reserved');
+    expect(validateName('Bolty')).toBeNull();
   });
 });
 
