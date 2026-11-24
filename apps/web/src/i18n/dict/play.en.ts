@@ -12,6 +12,8 @@ export const playEn = {
   'hud.yourBest': 'Your best {n}',
   'hud.beat': 'Beat {name} {n}',
   'hud.next': 'Next {name} {n}',
+  'hud.bot': '{name} (bot)',
+  'side.botsNote': 'BOT rows are bot benchmarks. They take no place or prize.',
   'hud.ahead': 'Ahead of {name}',
   'hud.setScore': 'Set the score to beat',
   'hud.lead': 'You lead the board',

@@ -25,6 +25,7 @@ import { PlaySide, emptySnap, type SideSnap } from './PlaySide';
 import { runCost, useSession } from './Session';
 import { TutorialCard, markTutorialSeen, tutorialSeen } from './Tutorial';
 import { Cover } from './ui';
+import { botsFor, isBot, withBenchmarks } from '@/lib/benchmarks';
 
 type Phase = 'loading' | 'count' | 'play' | 'pause' | 'dying' | 'saving' | 'over';
 
@@ -32,9 +33,13 @@ interface TargetRow {
   n: string;
   s: number;
   me?: boolean;
+  /** A display-only bot benchmark: a target to beat, never a place. */
+  bot?: boolean;
 }
 interface Targets {
   rows: TargetRow[];
+  /** Bot benchmarks shown with this board (ranked, Cup, practice only; never duels or challenges). */
+  bots?: TargetRow[];
   best: number;
   duel: { opp: string | null; target: number | null; friend: boolean } | null;
   /** Ranked and Cup: the pool and the period's end, for the desktop side panel. */
@@ -320,7 +325,7 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
     const target = (sc: number): { t: TargetRow | null; floor: number; place: number } => {
       const d = targets.duel;
       if (d) return { t: d.target != null && sc <= d.target ? { n: d.opp ?? '', s: d.target } : null, floor: 0, place: 0 };
-      const list: TargetRow[] = targets.rows.slice();
+      const list: TargetRow[] = targets.rows.concat(targets.bots ?? []);
       if (targets.best > 0) list.push({ n: 'your best', s: targets.best, me: true });
       const above = list.filter((x) => x.s > sc).sort((a, b) => a.s - b.s);
       const below = list.filter((x) => x.s <= sc).sort((a, b) => b.s - a.s);
@@ -360,7 +365,7 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
         [659, 784, 1047, 1319].forEach((f, i) => setTimeout(() => beep(f, 0.14, 'square', 0.035), i * 70));
       }
       if (old && old.t && sc > old.t.s && !force) {
-        if (!old.t.me) fxText(L().t('fx.passed', { name: old.t.n }));
+        if (!old.t.me) fxText(L().t(old.t.bot ? 'fx.beatBot' : 'fx.passed', { name: old.t.n }));
         beep(784, 0.12, 'sine', 0.06);
         setTimeout(() => beep(1047, 0.16, 'sine', 0.06), 90);
       }
@@ -371,7 +376,7 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
         targetRef.current.textContent = n.t
           ? n.t.me
             ? lt('hud.yourBest', { n: fmt(n.t.s) })
-            : lt(d ? 'hud.beat' : 'hud.next', { name: n.t.n, n: fmt(n.t.s) })
+            : lt(d ? 'hud.beat' : 'hud.next', { name: n.t.bot ? lt('hud.bot', { name: n.t.n }) : n.t.n, n: fmt(n.t.s) })
           : d
             ? d.opp
               ? lt('hud.ahead', { name: d.opp })
@@ -387,6 +392,7 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
       snap.target = targetRef.current?.textContent ?? '';
       snap.bar = bar;
       snap.rows = targets.rows;
+      snap.bots = targets.bots ?? [];
       snap.best = targets.best;
       snap.duel = targets.duel;
       snap.pool = targets.pool ?? null;
@@ -478,6 +484,8 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
       const myId = s().me?.user.id;
       const fromBoard = (b: BoardResponse): Targets => ({
         rows: b.rows.filter((r) => r.userId !== myId).map((r) => ({ n: r.name, s: r.score })), best: b.me?.score ?? 0, duel: null, pool: b.pool, endAt: b.period.endAt,
+        // The same bots the board page shows for this board (the Cup uses its own game's ladder). Display only.
+        bots: withBenchmarks(b.rows, botsFor(b.game)).filter(isBot).map((r) => ({ n: r.name, s: r.score, bot: true })),
       });
       if (mode === 'duel') {
         const d = await api.duels();

@@ -12,26 +12,59 @@ import { endsText } from '@/i18n/content';
 import { commonEn } from '@/i18n/dict/common.en';
 import { homeEn } from '@/i18n/dict/home.en';
 import { useSession } from './Session';
-import { Cover } from './ui';
+import { botsFor, withBenchmarks } from '@/lib/benchmarks';
+import { BotAvatar, BotChip, Cover } from './ui';
 
 function Top3({ card, myName, style }: { card: GameCard; myName?: string; style?: React.CSSProperties }) {
   const t = useT('home', homeEn);
+  const tc = useT('common', commonEn);
+  // Display only: fewer than three real scores are topped up with labelled bot benchmarks (no place number).
+  const real = card.top3.map((r, i) => ({ ...r, place: i + 1 }));
+  const rows = withBenchmarks(real, botsFor(card.key), 3);
   return (
     <ol className="top3" style={style}>
-      {card.top3.length === 0 && (
+      {rows.length === 0 && (
         <li className="none">
           <span className="pos">–</span>
           <span className="nm">{t('top3.none')}</span>
         </li>
       )}
-      {card.top3.map((r, i) => (
-        <li key={i}>
-          <span className="pos">{i + 1}</span>
-          <span className={`nm ${myName && r.name === myName ? 'me' : ''}`}>{r.name}</span>
-          <b className="num">{fmt(r.score)}</b>
-        </li>
-      ))}
+      {rows.map((r) =>
+        r.bot ? (
+          <li key={'bot' + r.level} className="bot" title={tc('bot.title', { name: r.name })}>
+            <span className="pos" aria-hidden="true">
+              —
+            </span>
+            <span className="nm">
+              <BotAvatar id={r.avatar} size={18} />
+              <span style={{ marginLeft: 8, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
+              <BotChip label={tc('bot.chip')} />
+            </span>
+            <span className="num">{fmt(r.score)}</span>
+          </li>
+        ) : (
+          <li key={r.place}>
+            <span className="pos">{r.place}</span>
+            <span className={`nm ${myName && r.name === myName ? 'me' : ''}`}>{r.name}</span>
+            <b className="num">{fmt(r.score)}</b>
+          </li>
+        ),
+      )}
     </ol>
+  );
+}
+
+/** Classics: the next bot benchmark above the player's best this week, if any is left to beat. */
+function NextBot({ game, best }: { game: GameKey; best: number }) {
+  const t = useT('home', homeEn);
+  const tc = useT('common', commonEn);
+  const next = botsFor(game).filter((b) => b.score > best).pop();
+  if (!next) return null;
+  return (
+    <span className="botnext" title={tc('bot.title', { name: next.name })}>
+      {' · '}
+      {t.rich('classics.bot', { name: <>{next.name}<BotChip label={tc('bot.chip')} /></>, n: fmt(next.score) })}
+    </span>
   );
 }
 
@@ -268,7 +301,10 @@ export function HomeView({ games: initialGames, cup: initialCup, challenge }: { 
               </div>
               <div>
                 <b>{GAMES[k].name}</b>
-                <small>{t('classics.meta', { pool: fmt(c.pool), best: fmt(c.myBest ?? 0) })}</small>
+                <small>
+                  {t('classics.meta', { pool: fmt(c.pool), best: fmt(c.myBest ?? 0) })}
+                  <NextBot game={k} best={c.myBest ?? 0} />
+                </small>
                 <div className="row">
                   <button className="sbtn" onClick={() => s.play(k, 'ranked')} aria-label={t('card.rankedAria', { game: GAMES[k].name, n: ECONOMY.rankedEntry })}>
                     {t('classics.ranked', { n: ECONOMY.rankedEntry })}

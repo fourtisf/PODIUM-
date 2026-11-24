@@ -10,6 +10,7 @@ import type { StatKey } from '@podium/games';
 import { useContent, useT } from '@/i18n/client';
 import { endsText } from '@/i18n/content';
 import { commonEn } from '@/i18n/dict/common.en';
+import { BotChip } from './ui';
 import { playEn } from '@/i18n/dict/play.en';
 
 export interface SideSnap {
@@ -24,13 +25,15 @@ export interface SideSnap {
   bar: number;
   /** Other players on the board, best first. */
   rows: { n: string; s: number }[];
+  /** Display-only bot benchmarks on this board, best first. Never ranked: they take no place. */
+  bots: { n: string; s: number }[];
   best: number;
   duel: { opp: string | null; target: number | null; friend: boolean } | null;
   pool: number | null;
   endAt: string | null;
 }
 
-export const emptySnap = (): SideSnap => ({ score: 0, t: 0, stats: [], place: 0, target: '', bar: 0, rows: [], best: 0, duel: null, pool: null, endAt: null });
+export const emptySnap = (): SideSnap => ({ score: 0, t: 0, stats: [], place: 0, target: '', bar: 0, rows: [], bots: [], best: 0, duel: null, pool: null, endAt: null });
 
 const WIDE = '(min-width: 1100px)';
 
@@ -169,29 +172,47 @@ export function PlaySide({ side, game, mode, snap }: { side: 'l' | 'r'; game: Ga
       </div>
     );
   } else {
-    const all = s.rows.map((r) => ({ n: r.n, s: r.s, me: false }));
-    all.push({ n: t('you'), s: s.score, me: true });
+    const all = s.rows.map((r) => ({ n: r.n, s: r.s, me: false, bot: false }));
+    all.push({ n: t('you'), s: s.score, me: true, bot: false });
     // Ties: the player already on the board stays ahead.
     all.sort((a, b) => b.s - a.s || Number(a.me) - Number(b.me));
-    const mine = all.findIndex((r) => r.me);
-    const top = all.slice(0, 5).map((r, i) => ({ ...r, place: i + 1 }));
-    if (mine >= 5) top.push({ ...all[mine]!, place: mine + 1 });
+    // Places count real players only; bot benchmarks slot in by score (a tie goes to the player) with no place.
+    const placed = all.map((r, i) => ({ ...r, place: i + 1 }));
+    const bots = s.bots.map((r) => ({ n: r.n, s: r.s, me: false, bot: true, place: 0 }));
+    const merged = placed.concat(bots).sort((a, b) => b.s - a.s || Number(a.bot) - Number(b.bot));
+    const mine = merged.findIndex((r) => r.me);
+    const top = merged.slice(0, 5);
+    if (mine >= 5) top.push(merged[mine]!);
     body = (
       <div className="pc">
         <small>{t(mode === 'cup' ? 'side.cupBoard' : 'side.board')}</small>
         <table className="pboard">
           <tbody>
-            {top.map((r) => (
-              <tr key={(r.me ? 'me' : 'p') + r.place} className={r.me ? 'me' : ''}>
-                <td>{r.place}</td>
-                <td>{r.n}</td>
-                <td className="r">
-                  <b className="num">{fmt(r.s)}</b>
-                </td>
-              </tr>
-            ))}
+            {top.map((r) =>
+              r.bot ? (
+                <tr key={'bot' + r.n} className="bot" title={tc('bot.title', { name: r.n })}>
+                  <td aria-hidden="true">—</td>
+                  <td>
+                    {r.n}
+                    <BotChip label={tc('bot.chip')} />
+                  </td>
+                  <td className="r">
+                    <span className="num">{fmt(r.s)}</span>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={(r.me ? 'me' : 'p') + r.place} className={r.me ? 'me' : ''}>
+                  <td>{r.place}</td>
+                  <td>{r.n}</td>
+                  <td className="r">
+                    <b className="num">{fmt(r.s)}</b>
+                  </td>
+                </tr>
+              ),
+            )}
           </tbody>
         </table>
+        {top.some((r) => r.bot) && <p className="pnote">{t('side.botsNote')}</p>}
         {!s.rows.length && <p className="pnote">{t('side.empty')}</p>}
         {ranked ? (
           <div className="prow big">

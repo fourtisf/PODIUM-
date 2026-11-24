@@ -14,6 +14,8 @@ export const playId = {
   'hud.yourBest': 'Terbaikmu {n}',
   'hud.beat': 'Kalahkan {name} {n}',
   'hud.next': 'Berikutnya {name} {n}',
+  'hud.bot': '{name} (bot)',
+  'side.botsNote': 'Baris BOT adalah patokan bot. Bot tidak mengambil peringkat atau hadiah.',
   'hud.ahead': 'Unggul dari {name}',
   'hud.setScore': 'Cetak skor yang harus dikalahkan',
   'hud.lead': 'Kamu memimpin papan',
