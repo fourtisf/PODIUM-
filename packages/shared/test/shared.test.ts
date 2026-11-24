@@ -78,3 +78,22 @@ describe('names', () => {
     expect(validateName('bad<name>')).toBe('chars');
   });
 });
+
+import { tokenCa, xUrl } from '../src';
+
+describe('social links', () => {
+  it('accepts only x.com / twitter.com profile links', () => {
+    expect(xUrl('https://x.com/climbgames')).toBe('https://x.com/climbgames');
+    expect(xUrl('https://twitter.com/climb_games/')).toBe('https://twitter.com/climb_games/');
+    expect(xUrl('')).toBeNull();
+    expect(xUrl('http://x.com/climbgames')).toBeNull();
+    expect(xUrl('https://evil.example/x.com/a')).toBeNull();
+    expect(xUrl('javascript:alert(1)')).toBeNull();
+  });
+  it('shows a contract address only when it looks like a Solana address', () => {
+    expect(tokenCa('So11111111111111111111111111111111111111112')).toBe('So11111111111111111111111111111111111111112');
+    expect(tokenCa('')).toBeNull();
+    expect(tokenCa('0x52908400098527886E0F7030069857D2E4169EE7')).toBeNull();
+    expect(tokenCa('coming soon')).toBeNull();
+  });
+});

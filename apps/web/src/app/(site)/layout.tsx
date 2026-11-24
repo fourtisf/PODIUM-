@@ -1,5 +1,5 @@
 import type { ActivityResponse } from '@podium/shared';
-import { Footer, Header, Ticker } from '@/components/Chrome';
+import { CaBar, Footer, Header, Ticker } from '@/components/Chrome';
 import { serverGet } from '@/lib/server-api';
 
 export default async function SiteLayout({ children }: { children: React.ReactNode }) {
@@ -8,6 +8,7 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
     <>
       <Header />
       <Ticker initial={activity?.items ?? []} />
+      <CaBar />
       <main className="wrap">{children}</main>
       <Footer />
     </>

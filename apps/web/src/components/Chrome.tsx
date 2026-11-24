@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BRAND, fmt } from '@podium/shared';
+import { BRAND, fmt, tokenCa, xUrl } from '@podium/shared';
 import type { ActivityItem, NotificationItem } from '@podium/shared';
 import { api } from '@/lib/api';
 import { onlyBold } from '@/lib/sanitize';
@@ -99,6 +99,7 @@ export function Header() {
               </Link>
             ))}
           </nav>
+          <XButton />
           <button className="hbtn" id="bell" aria-label="Notifications" aria-expanded={notesOn} onClick={toggleNotes}>
             <svg viewBox="0 0 20 20" aria-hidden="true">
               <path d="M5 8a5 5 0 0 1 10 0c0 4 1.5 5 1.5 5h-13S5 12 5 8M8.2 16a2 2 0 0 0 3.6 0" />
@@ -184,11 +185,84 @@ export function Ticker({ initial }: { initial: ActivityItem[] }) {
   );
 }
 
+const X_PATH = 'M14.2 10.5L22 1.5h-1.9l-6.8 7.8L8 1.5H1.8l8.2 11.9-8.2 9.4h1.9l7.1-8.2 5.7 8.2h6.2l-8.5-12.3zm-2.5 2.9l-.8-1.2L4.3 2.9h2.8l5.3 7.6.8 1.2 6.9 9.9h-2.8l-5.6-8.2z';
+
+/** The X logo button in the header. Until the profile link is configured it says the account is coming soon. */
+function XButton() {
+  const { toast } = useSession();
+  const href = xUrl();
+  const icon = (
+    <svg viewBox="0 0 24 24" aria-hidden="true" style={{ fill: 'var(--ink)', stroke: 'none', width: 16, height: 16 }}>
+      <path d={X_PATH} />
+    </svg>
+  );
+  return href ? (
+    <a className="hbtn" href={href} target="_blank" rel="noopener noreferrer" aria-label={`${BRAND.name} on X`}>
+      {icon}
+    </a>
+  ) : (
+    <button className="hbtn" aria-label={`${BRAND.name} on X, coming soon`} onClick={() => toast(`Our X account is coming soon.`)}>
+      {icon}
+    </button>
+  );
+}
+
+/** Slim bar under the ticker: the token contract address with a copy button, "Coming soon" until it is set. */
+export function CaBar() {
+  const { toast } = useSession();
+  const ca = tokenCa();
+  const x = xUrl();
+  const copy = () => {
+    if (!ca) return;
+    const bad = () => toast('Copy failed. Select the address and copy it manually.');
+    try {
+      navigator.clipboard.writeText(ca).then(() => toast('Contract address copied.'), bad);
+    } catch {
+      bad();
+    }
+  };
+  return (
+    <div className="cabar">
+      <div className="wrap">
+        <span className="calbl">CA</span>
+        {ca ? (
+          <code className="caval" title={ca}>
+            {ca}
+          </code>
+        ) : (
+          <span className="caval soon">Coming soon</span>
+        )}
+        <button className="cacopy" onClick={copy} disabled={!ca} aria-label={ca ? 'Copy contract address' : 'Contract address coming soon'}>
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <rect x="7" y="7" width="10" height="10" rx="2.5" />
+            <path d="M13 4.5A1.5 1.5 0 0 0 11.5 3h-6A2.5 2.5 0 0 0 3 5.5v6A1.5 1.5 0 0 0 4.5 13" />
+          </svg>
+          {ca ? 'Copy' : 'Soon'}
+        </button>
+        {x && (
+          <a className="cax" href={x} target="_blank" rel="noopener noreferrer">
+            Follow on X
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function Footer() {
+  const x = xUrl();
   return (
     <footer>
       <div className="wrap">
         {BRAND.name} beta. All amounts are tChips with no value.
+        {x && (
+          <>
+            {' '}
+            <a href={x} target="_blank" rel="noopener noreferrer">
+              Follow us on X
+            </a>
+          </>
+        )}
       </div>
     </footer>
   );
