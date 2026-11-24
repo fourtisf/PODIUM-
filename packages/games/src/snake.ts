@@ -1,5 +1,6 @@
 // Snake on a 20 x 20 grid; left and right turn relative to the heading. Port of the prototype's DEF.snake.
 import { rr } from './draw-util';
+import { beginFrame, drawBits, endFrame, glow, juice, kickFlash, pop, ring, sparks } from './juice';
 import { ramp } from './pace';
 import { R } from './rng';
 import { H, W, type BaseState, type GameDef } from './types';
@@ -75,29 +76,87 @@ export const snake: GameDef<SnakeState> = {
     return false;
   },
 
+  view(s) {
+    const [hx, hy] = s.body[0]!;
+    const nx = hx + s.dir[0], ny = hy + s.dir[1];
+    const blocked = nx < 0 || ny < 0 || nx > 19 || ny > 19 || s.body.some((b, i) => i < s.body.length - 1 && b[0] === nx && b[1] === ny);
+    const step = snakeStep(s);
+    return { danger: blocked && !s.turns.length ? 0.4 + 0.6 * Math.min(1, s.acc / step) : 0, stats: [{ k: 'length', v: s.body.length }] };
+  },
+
   draw(ctx, s) {
+    const j = juice(s, () => ({ score: 0, eat: 9 }));
+    const m = j.m;
+    const oy = 150, c = 24;
+    if (s.score > m.score) {
+      const [hx, hy] = s.body[0]!;
+      m.eat = 0;
+      ring(j, hx * c + 12, oy + hy * c + 12, '#ff8fa3', 50, 0.35, 4);
+      sparks(j, hx * c + 12, oy + hy * c + 12, '#ffd1da', 8, 220);
+      if (s.score % 10 === 0) {
+        pop(j, 240, 120, s.score + '!', '#7af08c', 34, 1);
+        kickFlash(j, 0.15, '#7af08c');
+      }
+    }
+    m.score = s.score;
+    m.eat += j.dt;
+
+    beginFrame(ctx, j);
     ctx.fillStyle = '#0c2415';
     ctx.fillRect(0, 0, W, H);
-    const oy = 150, c = 24;
     ctx.fillStyle = '#12331f';
     rr(ctx, 0, oy, 480, 480, 14);
-    ctx.strokeStyle = '#1c4a2d';
+    // Grid lines shimmer outwards from the head after a meal.
+    const [hx0, hy0] = s.body[0]!;
     ctx.lineWidth = 1;
     for (let i = 1; i < 20; i++) {
+      const dv = Math.abs(i - hx0 - 0.5), dh = Math.abs(i - hy0 - 0.5);
+      const wv = Math.max(0, 1 - Math.abs(dv - m.eat * 30) / 3), wh = Math.max(0, 1 - Math.abs(dh - m.eat * 30) / 3);
+      ctx.strokeStyle = wv > 0 ? `rgba(122,240,140,${0.12 + wv * 0.35})` : '#1c4a2d';
       ctx.beginPath();
       ctx.moveTo(i * c, oy);
       ctx.lineTo(i * c, oy + 480);
+      ctx.stroke();
+      ctx.strokeStyle = wh > 0 ? `rgba(122,240,140,${0.12 + wh * 0.35})` : '#1c4a2d';
+      ctx.beginPath();
       ctx.moveTo(0, oy + i * c);
       ctx.lineTo(480, oy + i * c);
       ctx.stroke();
     }
+    // Food: bobbing, glowing.
+    const fx = s.food[0] * c + 12, fy = oy + s.food[1] * c + 12;
+    glow(ctx, fx, fy, 30, '#ff4f6d', 0.45 + 0.2 * Math.sin(s.t * 6));
     ctx.fillStyle = '#ff4f6d';
     ctx.beginPath();
-    ctx.arc(s.food[0] * c + 12, oy + s.food[1] * c + 12, 9, 0, 7);
+    ctx.arc(fx, fy, 9 + Math.sin(s.t * 6) * 1.2, 0, 7);
     ctx.fill();
-    s.body.forEach((b, i) => {
+    ctx.fillStyle = '#ffffff70';
+    ctx.beginPath();
+    ctx.arc(fx - 3, fy - 3, 3, 0, 7);
+    ctx.fill();
+    // Body: a bright pulse runs down the body after eating.
+    const n = s.body.length;
+    for (let i = n - 1; i >= 0; i--) {
+      const b = s.body[i]!;
+      const wave = Math.max(0, 1 - Math.abs(i - m.eat * 40) / 3);
       ctx.fillStyle = i ? (i % 2 ? '#4fd067' : '#7af08c') : '#b9ffc4';
-      rr(ctx, b[0] * c + 1.5, oy + b[1] * c + 1.5, c - 3, c - 3, 7);
-    });
+      const g = i ? 1.5 - wave * 1.5 : 0;
+      rr(ctx, b[0] * c + 1.5 + g, oy + b[1] * c + 1.5 + g, c - 3 - g * 2, c - 3 - g * 2, 7);
+      if (wave > 0) {
+        ctx.fillStyle = `rgba(255,255,255,${wave * 0.5})`;
+        rr(ctx, b[0] * c + 1.5, oy + b[1] * c + 1.5, c - 3, c - 3, 7);
+      }
+    }
+    // Eyes look the way the snake is heading.
+    const [dx, dy] = s.dir;
+    const ex = hx0 * c + 12 + dx * 4, ey = oy + hy0 * c + 12 + dy * 4;
+    ctx.fillStyle = '#0c2415';
+    for (const k of [-1, 1]) {
+      ctx.beginPath();
+      ctx.arc(ex + dy * 5 * k, ey - dx * 5 * k, 2.6, 0, 7);
+      ctx.fill();
+    }
+    drawBits(ctx, j);
+    endFrame(ctx, j);
   },
 };

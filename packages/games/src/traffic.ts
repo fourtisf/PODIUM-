@@ -28,6 +28,9 @@ export interface TrafficState extends BaseState {
 
 export const TRAFFIC_POOL = 14;
 
+/** Road speed in world units per second (version 2 pacing). Display code uses it for camera effects. */
+export const trafficSpeed = (t: number): number => 22 + ramp(t, 10, 40) * 0.9;
+
 export const traffic: GameDef<TrafficState> = {
   key: 'traffic',
   version: 2,
@@ -65,7 +68,7 @@ export const traffic: GameDef<TrafficState> = {
 
     // Version 2: the difficulty clock opens at 10 s and rejoins real time at 40 s.
     const e = ramp(s.t, 10, 40);
-    const v = 22 + e * 0.9;
+    const v = 22 + e * 0.9; // = trafficSpeed(s.t)
     s.dist += v * dt;
     s.score = Math.floor(s.dist / 4);
 
@@ -88,5 +91,12 @@ export const traffic: GameDef<TrafficState> = {
       else if (Math.abs(c.z) < 3.3 && Math.abs(c.x - s.px) < 1.65) return true;
     }
     return false;
+  },
+
+  view(s) {
+    const v = trafficSpeed(s.t);
+    let danger = 0;
+    for (const c of s.cars) if (c.on && Math.abs(c.x - s.px) < 2 && c.z < 0 && c.z > -16) danger = Math.max(danger, 1 + c.z / 16);
+    return { danger, speed: Math.min(1, (v - 24) / 46), stats: [{ k: 'speed', v: Math.round(v * 3.6) }] };
   },
 };

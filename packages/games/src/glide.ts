@@ -1,5 +1,6 @@
 // Glide: tap to flap a paper plane through ice gates and pick up stars. Port of the prototype's DEF.glide.
-import { sky } from './draw-util';
+import { sky, type Ctx } from './draw-util';
+import { beginFrame, drawBits, endFrame, glow, juice, pop, ring, speedLines, sparks } from './juice';
 import { ramp } from './pace';
 import { R, clamp } from './rng';
 import { H, W, type BaseState, type GameDef } from './types';
@@ -82,7 +83,40 @@ export const glide: GameDef<GlideState> = {
     return s.y < 0 || s.y > H;
   },
 
+  view(s) {
+    let danger = 0;
+    if (s.go) {
+      for (const g of s.gates) {
+        if (g.x < 60 || g.x > 330) continue;
+        const room = Math.min(s.y - 13 - (g.gy - g.gap / 2), g.gy + g.gap / 2 - (s.y + 13));
+        danger = Math.max(danger, Math.max(0, 1 - room / 34) * Math.max(0, 1 - Math.abs(g.x - 140) / 190));
+      }
+      danger = Math.max(danger, s.y < 60 ? 1 - s.y / 60 : 0, s.y > 560 ? (s.y - 560) / 80 : 0);
+    }
+    return { danger: Math.min(1, danger), stats: [{ k: 'gates', v: s.gp }] };
+  },
+
   draw(ctx, s) {
+    const j = juice(s, () => ({ dist: 0, trail: [] as number[], gp: 0, vy: 0, stars: new Set<Gate>() }));
+    const m = j.m;
+    const spd = s.go ? 175 + ramp(s.gp, 6, 30) * 3 : 0;
+    m.dist += spd * j.dt;
+    if (j.dt > 0) {
+      m.trail.unshift(s.y);
+      if (m.trail.length > 18) m.trail.pop();
+    }
+    if (s.gp > m.gp) {
+      pop(j, 140, s.y - 30, '+1', '#e6f6ff', 20, 0.6);
+      ring(j, 140, s.y, '#bfe9ff', 46, 0.3, 3);
+      if (s.gp % 10 === 0) pop(j, 240, 250, s.gp + ' GATES', '#ffd84a', 34, 1.1);
+    }
+    m.gp = s.gp;
+    if (s.vy < m.vy - 200) ring(j, 118, s.y + 6, '#ffffff', 26, 0.25, 3);
+    m.vy = s.vy;
+    for (const g of s.gates) if (m.stars.has(g) && !g.st) sparks(j, g.x, g.gy + g.so, '#ffd84a', 10, 260);
+    m.stars = new Set(s.gates.filter((g) => g.st));
+
+    beginFrame(ctx, j);
     sky(ctx, '#06123a', '#3e7fc4');
     // Aurora.
     ctx.lineCap = 'round';
@@ -91,7 +125,7 @@ export const glide: GameDef<GlideState> = {
     ctx.lineWidth = 50;
     ctx.beginPath();
     ctx.moveTo(-30, 130 + 12 * Math.sin(s.t * 0.7));
-    ctx.quadraticCurveTo(240, 30, 510, 120);
+    ctx.quadraticCurveTo(240, 30 + 20 * Math.sin(m.dist * 0.002), 510, 120);
     ctx.stroke();
     ctx.strokeStyle = '#a79bff';
     ctx.lineWidth = 32;
@@ -100,6 +134,17 @@ export const glide: GameDef<GlideState> = {
     ctx.quadraticCurveTo(260, 110 + 10 * Math.cos(s.t * 0.5), 510, 176);
     ctx.stroke();
     ctx.globalAlpha = 1;
+    // Distant ice peaks and clouds scroll slower than the gates.
+    peaks(ctx, m.dist * 0.12, 560, 90, '#1d3f7a');
+    peaks(ctx, m.dist * 0.3, 600, 60, '#2a5b9a');
+    ctx.fillStyle = '#ffffff12';
+    for (let i = 0; i < 5; i++) {
+      const x = ((((i * 150 - m.dist * 0.5) % 750) + 750) % 750) - 140;
+      ctx.beginPath();
+      ctx.ellipse(x, 260 + (i % 3) * 90, 110, 18, 0, 0, 7);
+      ctx.fill();
+    }
+    speedLines(ctx, s.t, s.go ? Math.min(1, s.gp / 40) * 0.8 + 0.15 : 0, 'left', '#e6f6ff');
 
     // Gates: an icicle from the top and one from the bottom, then the star.
     for (const q of s.gates) {
@@ -125,23 +170,33 @@ export const glide: GameDef<GlideState> = {
         ctx.fillRect(q.x - 24, Math.min(y0, y1 + d * 40), 5, Math.abs(y1 + d * 40 - y0));
       }
       if (q.st) {
-        ctx.fillStyle = '#ffd84a';
-        ctx.beginPath();
-        ctx.arc(q.x, q.gy + q.so, 10, 0, 7);
-        ctx.fill();
-        ctx.fillStyle = '#fff6c4';
-        ctx.beginPath();
-        ctx.arc(q.x - 3, q.gy + q.so - 3, 4, 0, 7);
-        ctx.fill();
+        const sy = q.gy + q.so;
+        glow(ctx, q.x, sy, 34, '#ffd84a', 0.4 + 0.2 * Math.sin(s.t * 7));
+        star(ctx, q.x, sy, 12, s.t * 2);
       }
     }
 
     // Snow.
     ctx.fillStyle = '#ffffffc0';
     for (let i = 0; i < 70; i++) {
-      const x = (((i * 83 - s.t * (120 + (i % 5) * 30)) % W) + W) % W;
+      const x = (((i * 83 - s.t * (120 + (i % 5) * 30) - m.dist * 0.6) % W) + W) % W;
       const y = (i * 47 + s.t * (90 + (i % 4) * 25)) % H;
       ctx.fillRect(x, y, 1.5 + (i % 3), 1.5 + (i % 3));
+    }
+
+    // Contrail.
+    if (s.go) {
+      ctx.lineCap = 'round';
+      for (let k = 1; k < m.trail.length; k++) {
+        ctx.globalAlpha = 0.35 * (1 - k / m.trail.length);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 6 * (1 - k / m.trail.length) + 1;
+        ctx.beginPath();
+        ctx.moveTo(122 - (k - 1) * spd / 60, m.trail[k - 1]!);
+        ctx.lineTo(122 - k * spd / 60, m.trail[k]!);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
     }
 
     // Plane.
@@ -174,6 +229,8 @@ export const glide: GameDef<GlideState> = {
     ctx.lineTo(-2, 1);
     ctx.fill();
     ctx.restore();
+    drawBits(ctx, j);
+    endFrame(ctx, j);
 
     if (!s.go) {
       ctx.fillStyle = '#fff';
@@ -183,3 +240,30 @@ export const glide: GameDef<GlideState> = {
     }
   },
 };
+
+function peaks(ctx: Ctx, off: number, base: number, amp: number, c: string): void {
+  ctx.fillStyle = c;
+  ctx.beginPath();
+  ctx.moveTo(0, H);
+  for (let x = 0; x <= W; x += 20) {
+    const u = x + off;
+    const k = ((u % 160) + 160) % 160;
+    ctx.lineTo(x, base - amp * (1 - Math.abs(k - 80) / 80) * (0.6 + 0.4 * Math.abs(Math.sin(Math.floor(u / 160) * 1.7))));
+  }
+  ctx.lineTo(W, H);
+  ctx.fill();
+}
+
+function star(ctx: Ctx, x: number, y: number, r: number, rot: number): void {
+  ctx.fillStyle = '#ffd84a';
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = rot + (i * Math.PI) / 5, rad = i % 2 ? r * 0.48 : r;
+    ctx.lineTo(x + Math.cos(a) * rad, y + Math.sin(a) * rad);
+  }
+  ctx.fill();
+  ctx.fillStyle = '#fff6c4';
+  ctx.beginPath();
+  ctx.arc(x - 2, y - 2, 3, 0, 7);
+  ctx.fill();
+}

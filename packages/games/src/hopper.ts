@@ -194,4 +194,18 @@ export const hopper: GameDef<HopperState> = {
     while (s.rows[0]!.r < base - 8) s.rows.shift();
     return false;
   },
+
+  view(s) {
+    // The camera catching up with an idle player, or a car about to reach the player's lane.
+    const behind = s.row * 2 - (s.cam - 7.5);
+    let danger = s.go ? Math.max(0, 1 - behind / 3.5) : 0;
+    const row = rowAt(s, s.row);
+    if (row && row.type === 'road') {
+      for (const it of row.items) {
+        const ahead = (s.x - it.x) * row.dir - it.len / 2;
+        if (ahead > 0 && ahead < 5) danger = Math.max(danger, (1 - ahead / 5) * 0.8);
+      }
+    }
+    return { danger: Math.min(1, danger) };
+  },
 };

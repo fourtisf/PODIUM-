@@ -1,6 +1,7 @@
 // Three.js view of Cube Field. Scene construction follows the prototype's buildCube().
 import * as THREE from 'three';
-import type { CubeState } from '@podium/games/src/cube';
+import { cubeSpeed, type CubeState } from '@podium/games/src/cube';
+import { reducedMotion } from '@podium/games';
 import type { Scene3D } from './types';
 
 export type { CubeState };
@@ -40,8 +41,32 @@ export function createCube3D(renderer: THREE.WebGLRenderer): Scene3D<CubeState> 
   ship.position.y = 0.7;
   sc.add(ship);
 
+  // Display-only camera juice: the field of view widens with speed and kicks when a cube skims past.
+  const prevZ: number[] = new Array(CUBES).fill(-100);
+  let kick = 0, last = 0;
+  const still = reducedMotion();
+  // A glowing tail behind the ship.
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.16, 1.6, 8), new THREE.MeshBasicMaterial({ color: 0x7af0c5, transparent: true, opacity: 0.45 }));
+  tail.rotation.x = Math.PI / 2;
+  tail.position.set(0, 0.62, 1.7);
+  sc.add(tail);
+
   return {
     render(s) {
+      const now = performance.now();
+      const dt = last ? Math.min(0.1, (now - last) / 1000) : 0;
+      last = now;
+      for (let i = 0; i < s.cubes.length; i++) {
+        const c = s.cubes[i]!;
+        if (prevZ[i]! < 1.5 && c.z >= 1.5 && c.z < 8 && Math.abs(c.x - s.x) < 3.2) kick = 1;
+        prevZ[i] = c.z;
+      }
+      kick = Math.max(0, kick - dt * 2.5);
+      const v = cubeSpeed(s.t);
+      cam.fov = 66 + Math.min(16, (v - 30) * 0.25) + kick * 8;
+      cam.updateProjectionMatrix();
+      tail.position.x = s.x;
+      tail.scale.set(1, 0.5 + Math.min(1, (v - 30) / 50) + Math.random() * 0.15, 1);
       for (let i = 0; i < cubes.length; i++) {
         const mesh = cubes[i]!;
         const c = s.cubes[i];
@@ -53,7 +78,8 @@ export function createCube3D(renderer: THREE.WebGLRenderer): Scene3D<CubeState> 
       gr.position.x = s.x;
       grid.position.x = Math.round(s.x / 4) * 4;
       grid.position.z = s.dist % 4;
-      cam.position.set(s.x, 3.4, 7.5);
+      const j = still ? 0 : kick * 0.16;
+      cam.position.set(s.x + (Math.random() - 0.5) * j, 3.4 + (Math.random() - 0.5) * j, 7.5);
       cam.rotation.set(-0.2, 0, -s.vx * 0.012);
       renderer.render(sc, cam);
     },
@@ -66,6 +92,8 @@ export function createCube3D(renderer: THREE.WebGLRenderer): Scene3D<CubeState> 
       (grid.material as THREE.Material).dispose();
       ship.geometry.dispose();
       (ship.material as THREE.Material).dispose();
+      tail.geometry.dispose();
+      (tail.material as THREE.Material).dispose();
     },
   };
 }

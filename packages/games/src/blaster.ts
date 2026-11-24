@@ -1,7 +1,8 @@
 // Star Blaster. Port of the prototype's DEF.blaster (prototype/podium-v9.html).
 import { PUC, capsule, rr, sky } from './draw-util';
+import { beginFrame, drawBits, endFrame, glow, juice, kickFlash, ring, sparks } from './juice';
 import { R, clamp, rnd } from './rng';
-import { W, type BaseState, type DrawEnv, type GameDef, type Input } from './types';
+import { W, type BaseState, type DrawEnv, type Fx, type GameDef, type Input } from './types';
 
 interface Bullet { x: number; y: number; vx: number }
 interface EnemyBullet { x: number; y: number; vx: number; vy: number }
@@ -286,7 +287,24 @@ function noise(t: number, k: number): number {
 }
 
 function draw(ctx: CanvasRenderingContext2D, s: BlasterState, env: DrawEnv): void {
+  const j = juice(s, () => ({ prev: new Map<Enemy, { x: number; y: number; c: string; b: boolean }>(), px: s.x, tilt: 0 }));
+  const m = j.m;
+  // Kills (display only): enemies that vanished above the bottom edge.
+  for (const [e, p] of m.prev) {
+    if (s.en.includes(e) || p.y > 640) continue;
+    ring(j, p.x, p.y, p.c, p.b ? 220 : 60, p.b ? 0.7 : 0.3, p.b ? 10 : 4);
+    sparks(j, p.x, p.y, '#fff', p.b ? 30 : 6, p.b ? 520 : 300);
+    if (p.b) kickFlash(j, 0.6, '#ffd0a0');
+  }
+  m.prev.clear();
+  for (const e of s.en) m.prev.set(e, { x: e.x, y: e.y, c: e.c, b: e.k === 'b' });
+  if (j.dt > 0) m.tilt += (clamp((s.x - m.px) / j.dt / 390, -1, 1) * 0.3 - m.tilt) * Math.min(1, j.dt * 10);
+  m.px = s.x;
+  beginFrame(ctx, j);
   sky(ctx, '#04051a', '#1b1150');
+  // Nebulae drifting far behind the stars.
+  glow(ctx, 120 + Math.sin(s.t * 0.1) * 40, ((s.t * 8) % 900) - 150, 220, '#6c5cff', 0.22);
+  glow(ctx, 380, ((s.t * 5 + 450) % 900) - 150, 180, '#ff4f81', 0.14);
   ctx.save();
   if (s.shake > 0) ctx.translate((noise(s.t, 1) - 0.5) * s.shake * 18, (noise(s.t, 2) - 0.5) * s.shake * 18);
 
@@ -368,7 +386,12 @@ function draw(ctx: CanvasRenderingContext2D, s: BlasterState, env: DrawEnv): voi
 
   for (const p of s.pu) capsule(ctx, p.x, p.y, p.k, PUC[p.k]!);
 
-  // Ship (blinks while invulnerable).
+  // Ship (blinks while invulnerable), banking into its movement.
+  glow(ctx, s.x, SHIP_Y + 26, 34, '#7dd3fc', 0.45 + 0.2 * noise(s.t, 4));
+  ctx.save();
+  ctx.translate(s.x, SHIP_Y);
+  ctx.rotate(m.tilt);
+  ctx.translate(-s.x, -SHIP_Y);
   if (!(s.inv > 0 && Math.floor(s.t * 18) % 2)) {
     const x = s.x, y = SHIP_Y;
     ctx.fillStyle = '#7dd3fc';
@@ -408,6 +431,8 @@ function draw(ctx: CanvasRenderingContext2D, s: BlasterState, env: DrawEnv): voi
     }
   }
 
+  ctx.restore();
+  drawBits(ctx, j);
   env.fxDraw();
   ctx.restore();
 
@@ -437,6 +462,22 @@ function draw(ctx: CanvasRenderingContext2D, s: BlasterState, env: DrawEnv): voi
     ctx.textAlign = 'center';
     ctx.fillText('COMBO x' + Math.min(8, 1 + Math.floor(s.combo / 4)), 240, 600);
   }
+  if (s.banner > 0 && s.wave % 5 === 0) {
+    // Boss warning: flashing hazard bars.
+    ctx.globalAlpha = Math.min(1, s.banner * 1.4) * (0.5 + 0.5 * Math.sin(s.t * 18));
+    ctx.fillStyle = '#ff3d3d';
+    for (const y of [286, 346]) {
+      for (let x = -40; x < W + 40; x += 36) {
+        ctx.beginPath();
+        ctx.moveTo(x + ((s.t * 120) % 36), y);
+        ctx.lineTo(x + 18 + ((s.t * 120) % 36), y);
+        ctx.lineTo(x + 6 + ((s.t * 120) % 36), y + 10);
+        ctx.lineTo(x - 12 + ((s.t * 120) % 36), y + 10);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
   if (s.banner > 0) {
     ctx.globalAlpha = Math.min(1, s.banner * 1.4);
     ctx.fillStyle = '#fff';
@@ -445,6 +486,7 @@ function draw(ctx: CanvasRenderingContext2D, s: BlasterState, env: DrawEnv): voi
     ctx.fillText(s.wave % 5 === 0 ? 'BOSS' : 'WAVE ' + s.wave, 240, 330);
     ctx.globalAlpha = 1;
   }
+  endFrame(ctx, j);
 }
 
 export const blaster: GameDef<BlasterState> = {
@@ -462,4 +504,16 @@ export const blaster: GameDef<BlasterState> = {
   init,
   update,
   draw,
+  view(s) {
+    let near = 999;
+    for (const b of s.eb) near = Math.min(near, Math.hypot(b.x - s.x, b.y - SHIP_Y));
+    for (const e of s.en) near = Math.min(near, Math.hypot(e.x - s.x, e.y - SHIP_Y) - 20);
+    const mult = Math.min(8, 1 + Math.floor(s.combo / 4));
+    return {
+      danger: Math.min(1, Math.max(s.lives === 1 ? 0.35 : 0, s.inv > 0 ? 0 : 1 - near / 110)),
+      mult,
+      stats: [{ k: 'wave', v: s.wave }, { k: 'combo', v: mult }, { k: 'lives', v: s.lives }],
+    };
+  },
+  impact: (f: Fx) => (f.k !== 'burst' ? 0 : f.n >= 70 ? 1 : f.n === 30 ? 0.7 : f.n === 24 ? 0.3 : 0),
 };

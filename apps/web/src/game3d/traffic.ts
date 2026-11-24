@@ -1,6 +1,7 @@
 // Three.js view of Traffic Rush. Scene construction follows the prototype's build3() / car3().
 import * as THREE from 'three';
-import type { TrafficState } from '@podium/games/src/traffic';
+import { trafficSpeed, type TrafficState } from '@podium/games/src/traffic';
+import { reducedMotion } from '@podium/games';
 import type { Scene3D } from './types';
 
 export type { TrafficState };
@@ -102,8 +103,29 @@ export function createTraffic3D(renderer: THREE.WebGLRenderer): Scene3D<TrafficS
     pool.push(c);
   }
 
+  // Display-only camera juice: the field of view widens with speed and kicks on a near miss.
+  const prevZ: number[] = new Array(POOL).fill(-100);
+  let kick = 0, last = 0;
+  const still = reducedMotion();
+
   return {
     render(s) {
+      const now = performance.now();
+      const dt = last ? Math.min(0.1, (now - last) / 1000) : 0;
+      last = now;
+      for (let i = 0; i < s.cars.length; i++) {
+        const c = s.cars[i]!;
+        // A car that just went past in the next lane.
+        if (c.on && prevZ[i]! < 1.2 && c.z >= 1.2 && Math.abs(c.x - s.px) < 3.6) kick = 1;
+        prevZ[i] = c.on ? c.z : -100;
+      }
+      kick = Math.max(0, kick - dt * 2.5);
+      const v = trafficSpeed(s.t);
+      cam.fov = 62 + Math.min(14, (v - 22) * 0.28) + kick * 7;
+      cam.updateProjectionMatrix();
+      const j = still ? 0 : kick * 0.18;
+      cam.position.set((Math.random() - 0.5) * j + s.px * 0.12, 6 + (Math.random() - 0.5) * j, 9.5);
+      cam.lookAt(s.px * 0.1, 1, -9);
       const tx = (s.lane - 1) * 3;
       me.position.x = s.px;
       me.rotation.y = (s.px - tx) * 0.12;

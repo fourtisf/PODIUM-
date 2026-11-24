@@ -2,7 +2,7 @@
 import { rr, sky } from './draw-util';
 import { beginFrame, drawBits, endFrame, glow, juice, kickShake, pop, ring, speedLines, sparks } from './juice';
 import { ramp } from './pace';
-import { R, clamp } from './rng';
+import { R, clamp, rnd } from './rng';
 import { H, W, type BaseState, type Fx, type GameDef } from './types';
 
 interface Log { x: number; y: number; w: number; h: number }
@@ -32,10 +32,12 @@ export const duck: GameDef<DuckState> = {
 
   init(seed) {
     const s: DuckState = { score: 0, t: 0, seed, fx: [], x: 240, obs: [], sp: 0.2, coins: [], cs: 1.5, bonus: 0 };
-    // Version 2: two logs are already on the river when the run starts.
+    // Version 2: two logs are already on the river when the run starts, off the duck's starting lane
+    // (they never cover x 195..285), so the opening is busy but nothing is unavoidable.
     for (const y of [220, -20]) {
       const w = R(s, 60, 130);
-      s.obs.push({ x: R(s, 10, W - w - 10), y, w, h: 26 });
+      const x = rnd(s) < 0.5 ? R(s, 10, 195 - w) : R(s, 285, W - w - 10);
+      s.obs.push({ x, y, w, h: 26 });
     }
     return s;
   },
@@ -127,10 +129,12 @@ export const duck: GameDef<DuckState> = {
     beginFrame(ctx, j);
     sky(ctx, '#1f9aa0', '#0b4a70');
     // Deep current stripes (slow layer), then ripples (river speed).
-    ctx.fillStyle = '#ffffff08';
+    ctx.fillStyle = '#0b4a7016';
     for (let i = 0; i < 7; i++) {
-      const y = ((i * 110 + m.dist * 0.45) % (H + 120)) - 60;
-      ctx.fillRect(60 + ((i * 61) % 300), y, 40 + (i % 3) * 30, 70);
+      const y = ((i * 110 + m.dist * 0.45) % (H + 160)) - 80;
+      ctx.beginPath();
+      ctx.ellipse(70 + ((i * 61) % 340), y, 26 + (i % 3) * 10, 70, 0, 0, 7);
+      ctx.fill();
     }
     ctx.strokeStyle = '#ffffff26';
     ctx.lineWidth = 2;
@@ -173,7 +177,7 @@ export const duck: GameDef<DuckState> = {
     ctx.lineCap = 'round';
     for (let k = 0; k < m.trail.length; k++) {
       const p = m.trail[k]!, age = (p.y - 560) / 200;
-      if (age < 0.05 || k % 2) continue;
+      if (age < 0.05 || k % 3) continue;
       ctx.globalAlpha = Math.max(0, 0.5 - age * 0.5);
       ctx.lineWidth = 2 + age * 3;
       ctx.beginPath();

@@ -52,6 +52,51 @@ export function beep(f: number, d: number, type?: Wave, v?: number, slide?: numb
   }
 }
 
+let NOISE: AudioBuffer | null = null;
+
+/** A short percussion hit for milestones: a pitched-down kick, a noise snare or a closed hat. */
+export function drum(kind: 'kick' | 'snare' | 'hat' = 'kick', v = 0.08): void {
+  if (isMuted()) return;
+  try {
+    const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return;
+    AC = AC || new Ctor();
+    if (AC.state === 'suspended') void AC.resume();
+    const t = AC.currentTime, g = AC.createGain();
+    g.connect(AC.destination);
+    if (kind === 'kick') {
+      const o = AC.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(150, t);
+      o.frequency.exponentialRampToValueAtTime(42, t + 0.16);
+      g.gain.setValueAtTime(v * 2, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+      o.connect(g);
+      o.start(t);
+      o.stop(t + 0.23);
+      return;
+    }
+    if (!NOISE) {
+      NOISE = AC.createBuffer(1, AC.sampleRate * 0.3, AC.sampleRate);
+      const d = NOISE.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    const n = AC.createBufferSource(), f = AC.createBiquadFilter();
+    n.buffer = NOISE;
+    f.type = kind === 'hat' ? 'highpass' : 'bandpass';
+    f.frequency.value = kind === 'hat' ? 7000 : 1800;
+    const d = kind === 'hat' ? 0.05 : 0.14;
+    g.gain.setValueAtTime(v, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    n.connect(f);
+    f.connect(g);
+    n.start(t);
+    n.stop(t + d + 0.01);
+  } catch {
+    /* no audio */
+  }
+}
+
 export const SONGS: Record<SongKey, { bpm: number; bass: number[]; arp: number[] }> = {
   a: { bpm: 132, bass: [0, 0, 7, 5], arp: [0, 7, 12, 7, 3, 7, 12, 15] },
   b: { bpm: 112, bass: [0, 5, 3, 7], arp: [0, 3, 7, 10, 12, 10, 7, 3] },

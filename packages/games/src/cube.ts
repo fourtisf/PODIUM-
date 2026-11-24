@@ -21,6 +21,9 @@ export interface CubeState extends BaseState {
 
 export const CUBE_COUNT = 70;
 
+/** Flight speed in world units per second (version 2 pacing). Display code uses it for camera effects. */
+export const cubeSpeed = (t: number): number => 30 + ramp(t, 10, 40) * 1.1;
+
 export const cube: GameDef<CubeState> = {
   key: 'cube',
   version: 2,
@@ -47,7 +50,7 @@ export const cube: GameDef<CubeState> = {
     s.x += s.vx * dt;
 
     // Version 2: the difficulty clock opens at 10 s and rejoins real time at 40 s.
-    const v = 30 + ramp(s.t, 10, 40) * 1.1;
+    const v = cubeSpeed(s.t);
     s.dist += v * dt;
     s.score = Math.floor(s.dist / 3);
 
@@ -60,5 +63,12 @@ export const cube: GameDef<CubeState> = {
       if (Math.abs(c.z) < 1.5 && Math.abs(c.x - s.x) < 1.45) return true;
     }
     return false;
+  },
+
+  view(s) {
+    const v = cubeSpeed(s.t);
+    let danger = 0;
+    for (const c of s.cubes) if (Math.abs(c.x - s.x) < 2.2 && c.z < 0 && c.z > -14) danger = Math.max(danger, (1 + c.z / 14) * 0.8);
+    return { danger, speed: Math.min(1, (v - 34) / 50), stats: [{ k: 'speed', v: Math.round(v * 3.6) }] };
   },
 };

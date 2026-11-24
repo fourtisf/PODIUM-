@@ -5,12 +5,12 @@
 // The browser only displays: the score, place, XP and prizes on the result come from the response.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { H, LiveRun, Particles, W, gameDef } from '@podium/games';
-import type { Fx } from '@podium/games';
+import { H, LiveRun, Particles, W, gameDef, gameDefVersion, reducedMotion, speedLines } from '@podium/games';
+import type { Fx, GameView } from '@podium/games';
 import { ANTI_ABUSE, BRAND, CUP_WINNERS, ECONOMY, GAMES, WEEKLY_WINNERS, fmt, levelCeil, levelFloor, missionDef } from '@podium/shared';
 import type { BoardResponse, FinishRunResponse, GameKey, RunMode, StartRunResponse, StreamReply } from '@podium/shared';
 import { ApiFailure, api, wsBase } from '@/lib/api';
-import { beep, isMuted, setMuted, startMusic, stopMusic } from '@/lib/audio';
+import { beep, drum, isMuted, setMuted, startMusic, stopMusic } from '@/lib/audio';
 import {
   Accumulator, StreamCursor, keyDownEvents, keyUpEvents, logUpTo, newHeld, padDownEvents, padUpEvents, pointerDownEvents, pointerMoveEvents,
   pointerUpEvents, releaseAllEvents, type EvPair,
@@ -21,6 +21,7 @@ import { useContent, useErrors, useT } from '@/i18n/client';
 import type { Translator } from '@/i18n/core';
 import { commonEn } from '@/i18n/dict/common.en';
 import { playEn } from '@/i18n/dict/play.en';
+import { PlaySide, emptySnap, type SideSnap } from './PlaySide';
 import { runCost, useSession } from './Session';
 import { TutorialCard, markTutorialSeen, tutorialSeen } from './Tutorial';
 import { Cover } from './ui';
@@ -36,6 +37,9 @@ interface Targets {
   rows: TargetRow[];
   best: number;
   duel: { opp: string | null; target: number | null; friend: boolean } | null;
+  /** Ranked and Cup: the pool and the period's end, for the desktop side panel. */
+  pool?: number | null;
+  endAt?: string | null;
 }
 
 interface ResultView {
@@ -65,6 +69,18 @@ const kick = (el: Element | null, cls: string) => {
   el.classList.remove(cls);
   void (el as HTMLElement).offsetWidth;
   el.classList.add(cls);
+};
+/** Like kick(), but the class is removed again when its animation ends (so it cannot mask other animations). */
+const kickOnce = (el: Element | null, cls: string) => {
+  if (!el) return;
+  kick(el, cls);
+  el.addEventListener('animationend', () => el.classList.remove(cls), { once: true });
+};
+/** Score milestones: 10, 25, 50, 100, 250, 500, 1000, ... */
+const nextMilestone = (m: number): number => {
+  const p = Math.pow(10, Math.floor(Math.log10(m)));
+  const k = Math.round(m / p);
+  return k < 2.5 ? (k === 1 ? 2.5 * p : 5 * p) : k < 5 ? 5 * p : 10 * p;
 };
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -113,7 +129,47 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
   const shareOpen = useRef(false);
   shareOpen.current = !!share;
 
+  const ovRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  const cvxRef = useRef<HTMLCanvasElement>(null);
+  const vigRef = useRef<HTMLDivElement>(null);
+  const hitRef = useRef<HTMLDivElement>(null);
+  const popsRef = useRef<HTMLDivElement>(null);
+  const callRef = useRef<HTMLDivElement>(null);
+  const nbestRef = useRef<HTMLDivElement>(null);
+  const snapRef = useRef<SideSnap>(emptySnap());
+  // Browser full screen on the play overlay (button and the F key). Escape leaves it natively.
+  const [fsOk, setFsOk] = useState(false);
+  const [fsOn, setFsOn] = useState(false);
+  const fsAt = useRef(0);
+  const toggleFs = useCallback(() => {
+    const el = ovRef.current;
+    if (!el) return;
+    try {
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+      else void el.requestFullscreen({ navigationUI: 'hide' }).catch(() => undefined);
+    } catch {
+      /* not allowed here */
+    }
+  }, []);
+  const toggleFsRef = useRef(toggleFs);
+  toggleFsRef.current = toggleFs;
+  useEffect(() => {
+    try {
+      setFsOk(!!document.fullscreenEnabled && typeof ovRef.current?.requestFullscreen === 'function');
+    } catch {
+      /* no Fullscreen API */
+    }
+    const on = () => {
+      fsAt.current = performance.now();
+      setFsOn(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', on);
+    return () => {
+      document.removeEventListener('fullscreenchange', on);
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+    };
+  }, []);
   const cvRef = useRef<HTMLCanvasElement>(null);
   const cv3Ref = useRef<HTMLCanvasElement>(null);
   const flashRef = useRef<HTMLDivElement>(null);
@@ -168,8 +224,9 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
 
   // ------------------------------------------------------------------ one run
   useEffect(() => {
-    const def = gameDef(game);
-    const cv = cvRef.current!, cv3 = cv3Ref.current!, stage = stageRef.current!;
+    // The live rules until POST /runs answers; then the version the server recorded for this run.
+    let def = gameDef(game);
+    const cv = cvRef.current!, cv3 = cv3Ref.current!, cvx = cvxRef.current!, stage = stageRef.current!;
     const streamed = STREAMED.includes(mode);
     let alive = true;
     let phaseNow: Phase = 'loading';
@@ -195,6 +252,13 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
     let targets: Targets = { rows: [], best: 0, duel: mode === 'duel' || mode === 'challenge' ? { opp: null, target: null, friend: mode === 'challenge' } : null };
     let raf = 0, last = 0, cd = 1.5, cn = 0, dd = 0, shown = -1, lastBeep = 0;
     let prevTarget: { t: TargetRow | null } | null = null;
+    // Display-only juice state.
+    const still = reducedMotion();
+    let shakeA = 0, shaking = false, dangerS = 0, lastMult = 1, lastCallout = 0, bestShown = false, nextMile = 10;
+    let upStreak = 0, lastUp = 0, baseline = 0, cvxOn = false;
+    let xctx: CanvasRenderingContext2D | null = null;
+    const snap = snapRef.current;
+    Object.assign(snap, emptySnap());
     let ws: WebSocket | null = null, wsTries = 0, streaming = false, lastSent = 0, serverSaidEnded = false;
     let streamTimer: ReturnType<typeof setInterval> | undefined;
     let hintTimer: ReturnType<typeof setTimeout> | undefined;
@@ -215,8 +279,20 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
 
     // ---- drawing
     const fit = () => {
-      if (def.gl) return;
       const dpr = window.devicePixelRatio || 1;
+      // The effects layer (speed lines) and, for 3D games, the WebGL buffer follow the stage's size.
+      const boxW = stage.getBoundingClientRect().width || W;
+      const xw = Math.round(W * clamp((boxW / W) * dpr, 1, 2));
+      if (cvx.width !== xw) {
+        cvx.width = xw;
+        cvx.height = Math.round((xw * H) / W);
+      }
+      if (def.gl) {
+        const r = glRef.current.renderer as { setPixelRatio?(n: number): void; setSize?(w: number, h: number, s: boolean): void } | null;
+        r?.setPixelRatio?.(clamp((boxW / W) * dpr, 1, 2.5));
+        r?.setSize?.(W, H, false);
+        return;
+      }
       const cssW = cv.getBoundingClientRect().width || W;
       const want = Math.round(W * clamp((cssW / W) * dpr, 1, 3));
       if (cv.width !== want) {
@@ -260,14 +336,31 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
       if (up) {
         kick(scoreRef.current, 'pop');
         const now = performance.now();
+        // Consecutive points climb in pitch (a semitone each, up to an octave); a pause resets the climb.
+        upStreak = now - lastUp < 900 ? upStreak + 1 : 0;
+        lastUp = now;
         if (now - lastBeep > 70) {
           lastBeep = now;
-          beep(520 + Math.min(500, (sc % 24) * 18), 0.05, 'triangle', 0.035);
+          beep(520 * Math.pow(2, Math.min(12, upStreak) / 12), 0.05, 'triangle', 0.035);
+        }
+        // Milestones punch the counter and bump a drum.
+        if (sc >= nextMile) {
+          while (sc >= nextMile) nextMile = nextMilestone(nextMile);
+          kickOnce(scoreRef.current, 'punch');
+          drum('kick');
+          setTimeout(() => drum('hat', 0.05), 120);
         }
       }
       const old = prevTarget, n = target(sc), d = targets.duel;
+      if (!d && !bestShown && targets.best > 0 && sc > targets.best && shown >= 0 && up) {
+        bestShown = true;
+        if (nbestRef.current) nbestRef.current.textContent = L().t('fx.newBest');
+        kickOnce(nbestRef.current, 'on');
+        drum('kick', 0.1);
+        [659, 784, 1047, 1319].forEach((f, i) => setTimeout(() => beep(f, 0.14, 'square', 0.035), i * 70));
+      }
       if (old && old.t && sc > old.t.s && !force) {
-        fxText(old.t.me ? L().t('fx.pb') : L().t('fx.passed', { name: old.t.n }));
+        if (!old.t.me) fxText(L().t('fx.passed', { name: old.t.n }));
         beep(784, 0.12, 'sine', 0.06);
         setTimeout(() => beep(1047, 0.16, 'sine', 0.06), 90);
       }
@@ -287,12 +380,105 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
               ? lt('hud.lead')
               : lt('hud.top');
       }
-      if (barRef.current) barRef.current.style.width = (n.t ? clamp((sc - n.floor) / (n.t.s - n.floor), 0, 1) * 100 : 100) + '%';
+      const bar = n.t ? clamp((sc - n.floor) / (n.t.s - n.floor), 0, 1) * 100 : 100;
+      if (barRef.current) barRef.current.style.width = bar + '%';
+      snap.score = sc;
+      snap.place = n.place;
+      snap.target = targetRef.current?.textContent ?? '';
+      snap.bar = bar;
+      snap.rows = targets.rows;
+      snap.best = targets.best;
+      snap.duel = targets.duel;
+      snap.pool = targets.pool ?? null;
+      snap.endAt = targets.endAt ?? null;
+    };
+
+    // ---- juice: popups, callouts, shake, flashes, danger vignette, speed lines (display only)
+    const addPop = (x: number, y: number, text: string, big: boolean) => {
+      const box = popsRef.current;
+      if (!box || box.childElementCount > 10) return;
+      const el = document.createElement('span');
+      el.className = big ? 'big' : '';
+      el.textContent = text;
+      el.style.left = (clamp(x, 30, W - 30) / W) * 100 + '%';
+      el.style.top = (clamp(y, 40, H - 20) / H) * 100 + '%';
+      el.addEventListener('animationend', () => el.remove(), { once: true });
+      box.appendChild(el);
+    };
+    const callout = (text: string) => {
+      if (callRef.current) callRef.current.textContent = text;
+      kickOnce(callRef.current, 'on');
+    };
+    const setShake = (tx: number, ty: number) => {
+      const v = tx || ty ? `translate(${tx.toFixed(1)}px,${ty.toFixed(1)}px)` : '';
+      cv.style.transform = v;
+      cv3.style.transform = v;
+      cvx.style.transform = v;
+    };
+    const juiceFrame = (fxs: Fx[], delta: number, steps: number, dt: number) => {
+      if (!live) return;
+      const now = performance.now();
+      const v: GameView = def.view?.(live.state) ?? {};
+      if (steps > 0) {
+        let burst: { x: number; y: number } | null = null;
+        for (const f of fxs) {
+          if (f.k === 'burst') burst = { x: f.x, y: f.y };
+          const a = def.impact?.(f) ?? 0;
+          if (a > shakeA) shakeA = a;
+          if (a >= 0.5 && !still) kick(hitRef.current, 'on');
+        }
+        // "+N" where the points were won. Games that also score by time round their bonus to a multiple of 5.
+        if (burst && delta > 0) {
+          const val = baseline > 0.05 ? Math.round((delta - baseline * steps) / 5) * 5 : delta;
+          if (val >= 1) addPop(burst.x, burst.y, '+' + fmt(val), val >= 50);
+        } else baseline = baseline * 0.9 + (delta / steps) * 0.1;
+      }
+      // Combo callouts when the multiplier climbs.
+      const mult = v.mult ?? 1;
+      if (mult > lastMult && mult >= 2 && now - lastCallout > 900) {
+        lastCallout = now;
+        callout(L().t('fx.combo', { n: mult }));
+        drum('snare', 0.06);
+      }
+      lastMult = mult;
+      // Screen shake.
+      shakeA = Math.max(0, shakeA - dt * 3.5);
+      if (!still && shakeA > 0.01) {
+        setShake((Math.random() - 0.5) * shakeA * 18, (Math.random() - 0.5) * shakeA * 18);
+        shaking = true;
+      } else if (shaking) {
+        setShake(0, 0);
+        shaking = false;
+      }
+      // Danger vignette, pulsing.
+      dangerS += ((v.danger ?? 0) - dangerS) * Math.min(1, dt * 8);
+      if (vigRef.current) vigRef.current.style.opacity = String(dangerS < 0.02 ? 0 : still ? dangerS * 0.8 : dangerS * (0.72 + 0.28 * Math.sin(now / 85)));
+      // Speed lines over the 3D games.
+      const sp = v.speed ?? 0;
+      if (sp > 0.02) {
+        xctx = xctx || cvx.getContext('2d');
+        if (xctx) {
+          const k = cvx.width / W;
+          xctx.setTransform(1, 0, 0, 1, 0, 0);
+          xctx.clearRect(0, 0, cvx.width, cvx.height);
+          xctx.setTransform(k, 0, 0, k, 0, 0);
+          speedLines(xctx, live.state.t, sp, 'down');
+          cvxOn = true;
+        }
+      } else if (cvxOn && xctx) {
+        xctx.setTransform(1, 0, 0, 1, 0, 0);
+        xctx.clearRect(0, 0, cvx.width, cvx.height);
+        cvxOn = false;
+      }
+      snap.t = live.state.t;
+      snap.stats = v.stats ?? [];
     };
 
     const loadTargets = async (): Promise<Targets> => {
       const myId = s().me?.user.id;
-      const fromBoard = (b: BoardResponse): Targets => ({ rows: b.rows.filter((r) => r.userId !== myId).map((r) => ({ n: r.name, s: r.score })), best: b.me?.score ?? 0, duel: null });
+      const fromBoard = (b: BoardResponse): Targets => ({
+        rows: b.rows.filter((r) => r.userId !== myId).map((r) => ({ n: r.name, s: r.score })), best: b.me?.score ?? 0, duel: null, pool: b.pool, endAt: b.period.endAt,
+      });
       if (mode === 'duel') {
         const d = await api.duels();
         const open = d.open && (!duelId || d.open.id === duelId) ? d.open : null;
@@ -403,6 +589,9 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
       stopMusic();
       setPhase('dying');
       dd = 0.7;
+      shakeA = 0;
+      setShake(0, 0);
+      if (vigRef.current) vigRef.current.style.opacity = '0';
       kick(stage, 'shake');
       kick(flashRef.current, 'on');
       beep(260, 0.4, 'sawtooth', 0.07, -200);
@@ -429,9 +618,15 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
         if (cd <= 0) begin();
       } else if (phaseNow === 'play') {
         const steps = acc.add(dt);
-        for (let i = 0; i < steps && !live.dead; i++) handleFx(live.step());
+        const before = live.score, fxs: Fx[] = [];
+        for (let i = 0; i < steps && !live.dead; i++) {
+          const list = live.step();
+          handleFx(list);
+          fxs.push(...list);
+        }
         parts.step(dt);
         render();
+        juiceFrame(fxs, live.score - before, steps, dt);
         hud();
         if (live.dead) die();
       } else if (phaseNow === 'dying') {
@@ -526,18 +721,26 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
     const onKeyDown = (e: KeyboardEvent) => {
       if (shareOpen.current) return;
       const onControl = (e.target as HTMLElement | null)?.closest?.('button,a,input');
+      // F toggles full screen. Escape while in full screen (or just after leaving it) only leaves full
+      // screen, which the browser does by itself: it must not also pause or leave the game.
+      if (e.code === 'KeyF' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && !(e.target as HTMLElement | null)?.closest?.('input')) {
+        toggleFsRef.current();
+        return;
+      }
+      const fsEsc = e.code === 'Escape' && (!!document.fullscreenElement || performance.now() - fsAt.current < 600);
       if (phaseNow === 'over') {
         if (e.repeat) return;
         if (e.code === 'KeyM') return eng.current?.toggleMute();
         if ((e.code === 'Space' || e.code === 'Enter') && !onControl) {
           e.preventDefault();
           againRef.current();
-        } else if (e.code === 'Escape') leaveRef.current();
+        } else if (e.code === 'Escape' && !fsEsc) leaveRef.current();
         return;
       }
       if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'Space'].includes(e.code) && (phaseNow === 'play' || !onControl)) e.preventDefault();
       if (e.repeat) return;
       if (e.code === 'KeyM') return eng.current?.toggleMute();
+      if (fsEsc) return;
       if (e.code === 'Escape' || e.code === 'KeyP') return pause(phaseNow === 'play');
       if (phaseNow !== 'play') return;
       push(keyDownEvents(e.code, held));
@@ -598,6 +801,9 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
       cv3.style.display = def.gl ? 'block' : 'none';
       cdnRef.current?.classList.remove('on');
       stage.classList.remove('shake');
+      setShake(0, 0);
+      if (vigRef.current) vigRef.current.style.opacity = '0';
+      if (popsRef.current) popsRef.current.textContent = '';
       hint(L().gc.keys, true);
       if (scoreRef.current) scoreRef.current.textContent = '0';
       try {
@@ -657,7 +863,12 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
               hud(true);
             }
           });
+        // Play the rules version the server recorded for this run, so its replay agrees with this one.
+        def = gameDefVersion(game, start.gameVersion);
         live = new LiveRun(def, start.seed);
+        nextMile = 10;
+        bestShown = false;
+        snap.stats = def.view?.(live.state).stats ?? [];
         cursor = new StreamCursor(live.log);
         parts.clear();
         fit();
@@ -785,13 +996,20 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
 
   return (
     <>
-      <div className="scrim on" id="ov">
+      <div className={`scrim on ${fsOn ? 'fs' : ''}`} id="ov" ref={ovRef}>
         <div className="bg" id="oBg" aria-hidden="true">
           <Cover game={game} eager />
         </div>
+        <PlaySide side="l" game={game} mode={mode} snap={snapRef} />
         <div className="stage" id="stage" ref={stageRef}>
           <canvas id="cv" width={W} height={H} ref={cvRef} aria-label={t('canvas', { game: g.name })} />
           <canvas id="cv3" width={W} height={H} ref={cv3Ref} aria-label={t('canvas', { game: g.name })} />
+          <canvas id="cvx" width={W} height={H} ref={cvxRef} aria-hidden="true" />
+          <div className="vig" ref={vigRef} aria-hidden="true" />
+          <div className="hitfl" ref={hitRef} aria-hidden="true" />
+          <div className="pops" ref={popsRef} aria-hidden="true" />
+          <div className="callout" ref={callRef} aria-hidden="true" />
+          <div className="nbest" ref={nbestRef} aria-live="polite" />
           <div className="flash" id="flash" ref={flashRef} />
           <div className="gtop">
             <button className="gb" id="quit" aria-label={phase === 'pause' ? t('resume') : t('pause')} onClick={() => eng.current?.pause(phaseRef.current === 'play')}>
@@ -806,6 +1024,13 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
                 {modeTag(t, mode)}
               </span>
             </div>
+            {fsOk && (
+              <button className="gb fsb" id="fsb" aria-label={fsOn ? t('exitFullscreen') : t('fullscreen')} aria-pressed={fsOn} onClick={toggleFs}>
+                <svg className="st" viewBox="0 0 20 20" aria-hidden="true">
+                  {fsOn ? <path d="M8 3.5V8H3.5M12 3.5V8h4.5M8 16.5V12H3.5M12 16.5V12h4.5" /> : <path d="M3.5 8V3.5H8M16.5 8V3.5H12M3.5 12v4.5H8M16.5 12v4.5H12" />}
+                </svg>
+              </button>
+            )}
             <button className={`gb ${muted ? 'off' : ''}`} id="mute" aria-label={muted ? t('soundOn') : t('soundOff')} aria-pressed={!muted} onClick={() => eng.current?.toggleMute()}>
               <svg viewBox="0 0 20 20" aria-hidden="true">
                 <path d="M3 8h3l4-3.5v11L6 12H3z" />
@@ -901,6 +1126,7 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
             )}
           </div>
         </div>
+        <PlaySide side="r" game={game} mode={mode} snap={snapRef} />
         <div className="pad" id="pad">
           {pad !== 'a' && (
             <button aria-label={t('left')} {...padBtn('l')}>

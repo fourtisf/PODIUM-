@@ -1,6 +1,7 @@
 // Three.js view of Road Hopper. Scene construction follows the prototype's buildHop() and DEF.hopper.mk() / place().
 import * as THREE from 'three';
 import type { HopperRow, HopperState } from '@podium/games/src/hopper';
+import { reducedMotion } from '@podium/games';
 import type { Scene3D } from './types';
 
 export type { HopperState };
@@ -158,17 +159,32 @@ export function createHopper3D(renderer: THREE.WebGLRenderer): Scene3D<HopperSta
     }
   }
 
+  // Display-only: a squash when a hop lands and a small camera nudge when a car brushes past.
+  let wasHop = false, land = 1, nudge = 0, last = 0;
+  const still = reducedMotion();
+
   return {
     render(s) {
       syncRows(s);
+      const now = performance.now();
+      const dt = last ? Math.min(0.1, (now - last) / 1000) : 0;
+      last = now;
+      if (wasHop && !s.hop) land = 0;
+      wasHop = !!s.hop;
+      land = Math.min(1, land + dt / 0.14);
+      const row = s.rows[s.row - (s.rows[0]?.r ?? 0)];
+      if (row && row.type === 'road') for (const it of row.items) if (Math.abs(it.x - s.x) < it.len / 2 + 1.1) nudge = Math.max(nudge, 0.6);
+      nudge = Math.max(0, nudge - dt * 2);
       const hop = s.hop;
       // Hop arc: the same height the logic uses for its car check.
       const y = hop ? Math.sin(Math.PI * hop.t) * 0.9 : 0;
       pl.position.set(s.x, y, -(hop ? hop.fz + (hop.tz - hop.fz) * hop.t : s.row) * 2);
       pl.rotation.y = s.face;
-      pl.scale.set(1, hop ? 1 + 0.25 * Math.sin(Math.PI * hop.t) : 1, 1);
+      const sq = hop ? 0 : Math.sin(land * Math.PI) * 0.25;
+      pl.scale.set(1 + sq * 0.6, hop ? 1 + 0.25 * Math.sin(Math.PI * hop.t) : 1 - sq, 1 + sq * 0.6);
       const cx = s.x * 0.4;
-      cam.position.set(cx + 9, 23, -s.cam + 15);
+      const j = still ? 0 : nudge * 0.25;
+      cam.position.set(cx + 9 + (Math.random() - 0.5) * j, 23, -s.cam + 15 + (Math.random() - 0.5) * j);
       cam.lookAt(cx, 0, -s.cam - 3.6);
       renderer.render(sc, cam);
     },

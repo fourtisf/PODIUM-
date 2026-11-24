@@ -1,8 +1,9 @@
 // Sprint: auto-runner with a double jump over spikes. Port of the prototype's DEF.sprint.
 import { rr, sky } from './draw-util';
+import { beginFrame, drawBits, endFrame, glow, juice, kickShake, pop, ring, shard, speedLines } from './juice';
 import { ramp } from './pace';
 import { R, rnd } from './rng';
-import { W, type BaseState, type GameDef } from './types';
+import { W, type BaseState, type Fx, type GameDef } from './types';
 
 interface Spike { x: number; w: number; h: number }
 interface Coin { x: number; y: number }
@@ -82,9 +83,59 @@ export const sprint: GameDef<SprintState> = {
     return false;
   },
 
+  view(s) {
+    let danger = 0;
+    for (const o of s.obs) {
+      const ahead = o.x - 123;
+      if (ahead < 0 || ahead > 160) continue;
+      if (-s.y < o.h - 6) danger = Math.max(danger, 1 - ahead / 160);
+    }
+    return { danger: danger * 0.8 };
+  },
+
+  impact: (f: Fx) => (f.k === 'burst' && f.c === '#ffd84a' ? 0.06 : 0),
+
   draw(ctx, s) {
+    const j = juice(s, () => ({ y: 0, jumps: 0, ys: [] as number[], seen: new Set<Spike>(), mark: 0 }));
+    const m = j.m;
+    const v = 270 + ramp(s.t, 10, 50) * 8;
+    if (m.y < 0 && s.y === 0) for (let k = 0; k < 7; k++) shard(j, 110 + (k - 3) * 5, 498, 4, 4, '#b6ffe6', (k - 3) * 40 - 60, -60 - Math.random() * 80, 0, 0.4, 500);
+    if (s.j === 2 && m.jumps < 2) ring(j, 110, 478 + s.y, '#b6ffe6', 40, 0.3, 4);
+    m.jumps = s.j;
+    m.y = s.y;
+    if (j.dt > 0) {
+      m.ys.unshift(s.y);
+      if (m.ys.length > 10) m.ys.pop();
+    }
+    // A spike that slips under the runner with little room to spare.
+    for (const o of s.obs) {
+      if (m.seen.has(o) || o.x + o.w > 97) continue;
+      m.seen.add(o);
+      const room = -s.y - (o.h - 6);
+      if (room >= 0 && room < 22) {
+        pop(j, 110, 420 + s.y, 'CLOSE!', '#b6ffe6', 20);
+        kickShake(j, 0.12);
+      }
+    }
+    if (m.seen.size > 40) for (const o of m.seen) if (!s.obs.includes(o)) m.seen.delete(o);
+    const mark = Math.floor(s.dist / 2000);
+    if (mark > m.mark) {
+      m.mark = mark;
+      pop(j, 240, 250, mark * 100 + 'm', '#ffd84a', 34, 1);
+    }
+
+    beginFrame(ctx, j);
     sky(ctx, '#070b33', '#3a2f9a');
+    // Far stars drift with the distance.
+    for (let i = 0; i < 40; i++) {
+      const x = ((((i * 131 - s.dist * 0.04) % W) + W) % W);
+      ctx.globalAlpha = 0.3 + 0.4 * ((i * 37) % 10) / 10;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(x, (i * 59) % 300, 2, 2);
+    }
+    ctx.globalAlpha = 1;
     // Moon.
+    glow(ctx, 380, 150, 110, '#fff3c4', 0.25);
     ctx.fillStyle = '#fff3c4';
     ctx.beginPath();
     ctx.arc(380, 150, 40, 0, 7);
@@ -110,16 +161,34 @@ export const sprint: GameDef<SprintState> = {
         }
       }
     }
-    // Ground.
+    speedLines(ctx, s.t, Math.min(1, (v - 300) / 500), 'left', '#b6ffe6');
+    // Ground with streaks that scroll at full speed.
     ctx.fillStyle = '#060a27';
     ctx.fillRect(0, 500, W, 140);
     ctx.fillStyle = '#7af0c540';
     ctx.fillRect(0, 496, W, 12);
     ctx.fillStyle = '#b6ffe6';
     ctx.fillRect(0, 500, W, 4);
-    // Spikes.
+    ctx.fillStyle = '#7af0c522';
+    for (let i = 0; i < 8; i++) {
+      const x = ((((i * 97 - s.dist) % 560) + 560) % 560) - 60;
+      ctx.fillRect(x, 520 + (i % 4) * 26, 40 + (i % 3) * 30, 3);
+    }
+    // Distance posts every 100.
+    const post = Math.ceil(s.dist / 2000) * 2000;
+    for (const pd of [post, post + 2000]) {
+      const x = 110 + pd - s.dist;
+      if (x > W + 40) continue;
+      ctx.fillStyle = '#ffd84a';
+      ctx.fillRect(x, 470, 3, 30);
+      ctx.font = '800 12px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText((pd / 20) + '', x, 464);
+    }
+    // Spikes; the next ones glow.
     for (const o of s.obs) {
       const n = o.w > 40 ? 2 : 1, w = o.w / n;
+      if (o.x > 110 && o.x < 330) glow(ctx, o.x + o.w / 2, 500 - o.h / 2, o.h, '#ff4f81', 0.35);
       for (let k = 0; k < n; k++) {
         const x0 = o.x + k * w;
         ctx.fillStyle = '#ff4f81';
@@ -139,14 +208,25 @@ export const sprint: GameDef<SprintState> = {
     }
     // Coins.
     for (const c of s.co) {
+      glow(ctx, c.x, c.y, 26, '#ffd84a', 0.4);
+      const sx = Math.max(0.25, Math.abs(Math.cos(s.t * 6 + c.x * 0.05)));
       ctx.fillStyle = '#ffd84a';
       ctx.beginPath();
-      ctx.arc(c.x, c.y, 10, 0, 7);
+      ctx.ellipse(c.x, c.y, 10 * sx, 10, 0, 0, 7);
       ctx.fill();
       ctx.fillStyle = '#fff6c4';
       ctx.beginPath();
-      ctx.arc(c.x - 3, c.y - 3, 4, 0, 7);
+      ctx.ellipse(c.x - 3 * sx, c.y - 3, 4 * sx, 4, 0, 0, 7);
       ctx.fill();
+    }
+    // Afterimages in the air.
+    if (s.y < -4) {
+      for (let k = 2; k < m.ys.length; k += 2) {
+        ctx.globalAlpha = 0.18 * (1 - k / m.ys.length);
+        ctx.fillStyle = '#b6ffe6';
+        rr(ctx, 96 - k * 5, 500 + m.ys[k]! - 46, 28, 44, 11);
+      }
+      ctx.globalAlpha = 1;
     }
     // Runner: scarf, speed lines, body, visor, legs.
     const y = 500 + s.y, wv = Math.sin(s.t * 14) * 5;
@@ -175,5 +255,7 @@ export const sprint: GameDef<SprintState> = {
     const lg = s.y < 0 ? 0 : Math.sin(s.t * 22) * 6;
     rr(ctx, 100 + lg, y - 6, 8, 8, 3);
     rr(ctx, 112 - lg, y - 6, 8, 8, 3);
+    drawBits(ctx, j);
+    endFrame(ctx, j);
   },
 };

@@ -1,7 +1,8 @@
 // Brick Breaker. Port of the prototype's DEF.breaker (prototype/podium-v9.html).
 import { PUC, capsule, rr, sky } from './draw-util';
+import { beginFrame, drawBits, endFrame, glow, juice, kickFlash, ring, shard, sparks } from './juice';
 import { R, clamp, rnd } from './rng';
-import { W, type BaseState, type DrawEnv, type GameDef, type Input } from './types';
+import { W, type BaseState, type DrawEnv, type Fx, type GameDef, type Input } from './types';
 
 interface Brick { x: number; y: number; w: number; h: number; hp: number; /** Row, picks the colour. */ r: number; /** Hit flash, seconds left. */ hit: number }
 interface Ball { x: number; y: number; vx: number; vy: number; /** Seconds left on the paddle before auto-launch; 0 once in flight. */ stuck: number }
@@ -219,7 +220,36 @@ function noise(t: number, k: number): number {
 }
 
 function draw(ctx: CanvasRenderingContext2D, s: BreakerState, env: DrawEnv): void {
+  const j = juice(s, () => ({ bricks: new Set<Brick>(), vy: new WeakMap<Ball, number>(), trail: new WeakMap<Ball, [number, number][]>(), pad: 9, lives: s.lives, level: s.level }));
+  const m = j.m;
+  // Broken bricks shatter; a ball bouncing off the paddle squashes it (display only).
+  for (const k of m.bricks) {
+    if (s.bricks.includes(k) || s.level !== m.level) continue;
+    const c = COL[k.r % COL.length]!;
+    for (let i = 0; i < 4; i++) shard(j, k.x + 7 + i * 13, k.y + k.h / 2, 12, 9, c, (i - 1.5) * 60 + (Math.random() - 0.5) * 80, -80 - Math.random() * 120, (Math.random() - 0.5) * 12, 0.7, 900);
+    ring(j, k.x + k.w / 2, k.y + k.h / 2, c, 36, 0.25, 3);
+  }
+  if (s.level > m.level) kickFlash(j, 0.5, '#ffffff');
+  if (s.lives < m.lives) kickFlash(j, 0.35, '#ff2a50');
+  m.level = s.level;
+  m.lives = s.lives;
+  m.bricks = new Set(s.bricks);
+  for (const b of s.balls) {
+    const pv = m.vy.get(b);
+    if (pv !== undefined && pv > 0 && b.vy < 0 && b.y > 560) {
+      m.pad = 0;
+      sparks(j, b.x, 590, '#7af0c5', 6, 200);
+    }
+    m.vy.set(b, b.vy);
+    const tr = m.trail.get(b) ?? [];
+    if (j.dt > 0) tr.unshift([b.x, b.y]);
+    if (tr.length > 8) tr.pop();
+    m.trail.set(b, tr);
+  }
+  m.pad += j.dt;
+  beginFrame(ctx, j);
   sky(ctx, '#0a0c28', '#1c1458');
+  glow(ctx, 240, 380, 300, '#6c5cff', 0.12 + Math.min(0.15, s.combo * 0.015));
   ctx.save();
   if (s.shake > 0) ctx.translate((noise(s.t, 1) - 0.5) * s.shake * 16, (noise(s.t, 2) - 0.5) * s.shake * 16);
 
@@ -248,7 +278,12 @@ function draw(ctx: CanvasRenderingContext2D, s: BreakerState, env: DrawEnv): voi
 
   for (const p of s.pu) capsule(ctx, p.x, p.y, p.k, PUC[p.k]!);
 
-  // Paddle.
+  // Paddle (squashes for a moment when the ball bounces off it).
+  const sq = m.pad < 0.12 ? Math.sin((m.pad / 0.12) * Math.PI) : 0;
+  ctx.save();
+  ctx.translate(s.px, 597);
+  ctx.scale(1 + sq * 0.12, 1 - sq * 0.3);
+  ctx.translate(-s.px, -597);
   ctx.fillStyle = '#7af0c540';
   rr(ctx, s.px - s.pw / 2 - 4, 586, s.pw + 8, 22, 11);
   ctx.fillStyle = s.wide > 0 ? '#7af0c5' : '#fff';
@@ -256,8 +291,18 @@ function draw(ctx: CanvasRenderingContext2D, s: BreakerState, env: DrawEnv): voi
   ctx.fillStyle = '#ff4f81';
   rr(ctx, s.px - s.pw / 2, 590, 14, 14, 7);
   rr(ctx, s.px + s.pw / 2 - 14, 590, 14, 14, 7);
+  ctx.restore();
 
   for (const b of s.balls) {
+    const tr = m.trail.get(b) ?? [];
+    for (let k = 1; k < tr.length; k++) {
+      ctx.globalAlpha = 0.3 * (1 - k / tr.length);
+      ctx.fillStyle = s.slow > 0 ? '#7dd3fc' : '#ffffff';
+      ctx.beginPath();
+      ctx.arc(tr[k]![0], tr[k]![1], 7 * (1 - k / tr.length / 1.5), 0, 7);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
     ctx.fillStyle = '#ffffff30';
     ctx.beginPath();
     ctx.arc(b.x - b.vx * 0.02, b.y - b.vy * 0.02, 6, 0, 7);
@@ -272,6 +317,7 @@ function draw(ctx: CanvasRenderingContext2D, s: BreakerState, env: DrawEnv): voi
     ctx.fill();
   }
 
+  drawBits(ctx, j);
   env.fxDraw();
   ctx.restore();
 
@@ -292,6 +338,7 @@ function draw(ctx: CanvasRenderingContext2D, s: BreakerState, env: DrawEnv): voi
     ctx.textAlign = 'center';
     ctx.fillText('x' + Math.min(8, 1 + s.combo), 240, 629);
   }
+  endFrame(ctx, j);
 }
 
 export const breaker: GameDef<BreakerState> = {
@@ -313,4 +360,15 @@ export const breaker: GameDef<BreakerState> = {
   init,
   update,
   draw,
+  view(s) {
+    let danger = s.lives === 1 ? 0.3 : 0;
+    const live = s.balls.filter((b) => !b.stuck);
+    if (live.length) {
+      const low = live.reduce((a, b) => (b.y > a.y ? b : a));
+      if (low.vy > 0 && low.y > 470 && Math.abs(low.x - s.px) > s.pw / 2 + 8) danger = Math.max(danger, Math.min(1, (low.y - 470) / 110));
+    }
+    const mult = Math.min(8, 1 + s.combo);
+    return { danger, mult, stats: [{ k: 'level', v: s.level }, { k: 'combo', v: mult }, { k: 'lives', v: s.lives }] };
+  },
+  impact: (f: Fx) => (f.k === 'beep' && f.w === 'sawtooth' ? 0.6 : 0),
 };

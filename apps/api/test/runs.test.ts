@@ -1,4 +1,6 @@
 import { gameDef, maxPlausibleScore, replay, Ev } from '@podium/games';
+import { duckV1 } from '@podium/games/src/duck.v1';
+import { GAME_VERSIONS, currentVersion, versionDef } from '../src/services/gameVersions';
 import { ANTI_ABUSE, ECONOMY, XP, levelOf, type FinishRunResponse, type StartRunResponse } from '@podium/shared';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { judge, runDropsBox, settleRun } from '../src/services/runs';
@@ -233,6 +235,30 @@ describe('POST /runs/:id/finish', () => {
     // The client's own finish now gets that stored answer.
     const fin = await c.post<FinishRunResponse>(`/runs/${s.body.runId}/finish`, { score: p.score, frames: p.frames, inputLog: p.log });
     expect(fin.body).toEqual(out.body);
+  });
+
+  test('a run started on version 1 is finished and replayed on version 1, a new run on the current version', async () => {
+    expect(GAME).toBe('duck');
+    expect(currentVersion(GAME)).toBe(2);
+    expect(versionDef(GAME, 1)).toBe(duckV1);
+    expect(versionDef(GAME, 2)).toBe(gameDef(GAME));
+    expect(Object.keys(GAME_VERSIONS[GAME]).map(Number)).toEqual([1, 2]);
+    const c = await signUp(t);
+    const fresh = await c.post<StartRunResponse>('/runs', { game: GAME, mode: 'practice' });
+    expect(fresh.body.gameVersion).toBe(2);
+    expect((await t.ctx.db.run.findUniqueOrThrow({ where: { id: fresh.body.runId } })).gameVersion).toBe(2);
+    // A run in flight from before the deploy carries version 1.
+    const s = await c.post<StartRunResponse>('/runs', { game: GAME, mode: 'practice' });
+    await t.ctx.db.run.update({ where: { id: s.body.runId }, data: { gameVersion: 1 } });
+    const v1 = replay(duckV1, s.body.seed, [], 60 * 120);
+    const v2 = replay(gameDef(GAME), s.body.seed, [], 60 * 120);
+    expect(v1.dead).toBe(true);
+    // The same idle run plays out differently on the two versions (version 2 starts with logs on the river).
+    expect(v2.frames).not.toBe(v1.frames);
+    t.advance(130_000);
+    const fin = await c.post<FinishRunResponse>(`/runs/${s.body.runId}/finish`, { score: v1.score, frames: v1.frames, inputLog: [] });
+    expect(fin.status).toBe(200);
+    expect(fin.body.score).toBe(v1.score);
   });
 
   test('a run replays on the version it was played on; an unknown version is rejected', async () => {
