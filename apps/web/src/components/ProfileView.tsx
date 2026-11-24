@@ -11,6 +11,7 @@ import type { Translator } from '@/i18n/core';
 import { commonEn } from '@/i18n/dict/common.en';
 import { profileEn } from '@/i18n/dict/profile.en';
 import { LangSwitch } from './LangSwitch';
+import { WalletPanel } from './WalletPanel';
 import { useSession } from './Session';
 import { Avatar, BoxSvg, FrameSwatch } from './ui';
 
@@ -202,6 +203,7 @@ export function ProfileView({ games }: { games: GamesResponse | null }) {
           </div>
           <h3>{t('language')}</h3>
           <LangSwitch />
+          <WalletPanel />
         </div>
         <div className="panelx pan">
           <h3>{t('boxes')}</h3>

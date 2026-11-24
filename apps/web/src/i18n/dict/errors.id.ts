@@ -73,6 +73,8 @@ export const errorsId = {
     'Only a finished, accepted run can be shared.': 'Hanya run yang selesai dan diterima yang bisa dibagikan.',
     'An Idempotency-Key header of 8 to 64 characters is required.': 'Permintaan tidak valid. Muat ulang halaman lalu coba lagi.',
     'This account already has a wallet linked.': 'Akun ini sudah terhubung dengan dompet.',
+    'This wallet is how you sign in. Sign out instead, or add an email first.': 'Dompet ini adalah cara kamu masuk. Keluar saja, atau tambahkan email dulu.',
+    'In test-token mode the linked wallet holds your balance and cannot be removed.': 'Di mode token uji, dompet yang terhubung menyimpan saldomu dan tidak bisa dilepas.',
     'That wallet belongs to another account.': 'Dompet itu milik akun lain.',
     'That signature does not match the wallet.': 'Tanda tangan itu tidak cocok dengan dompetnya.',
     'Ask for a new message to sign.': 'Minta pesan baru untuk ditandatangani.',

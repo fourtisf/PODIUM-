@@ -119,6 +119,10 @@ export interface MeUser {
   /** Owned cosmetics. Free avatars and the "none" frame are always included. */
   items: { avatars: number[]; frames: string[] };
   flagged: boolean;
+  /** Linked Solana wallet (identity), or null. */
+  wallet: string | null;
+  /** The account can also sign in another way (email or Google), so the wallet can be removed from it. */
+  canUnlinkWallet: boolean;
 }
 
 export interface StreakState {

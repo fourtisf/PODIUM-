@@ -219,3 +219,12 @@ body.touch #ov:fullscreen .stage{height:min(calc(100dvh - 104px),calc((100vw - 1
   body:not(.touch) #ov:fullscreen .side{max-height:calc(100dvh - 16px)}
 }
 @media(min-width:1100px) and (max-height:780px){body:not(.touch) #ov .pkeys{display:none}}
+
+/* profile wallet panel */
+.wpanel{display:flex;flex-direction:column;gap:8px}
+.wpanel .wrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.wpanel .wrow img{border-radius:8px;flex:none}
+.wpanel .wrow code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;color:var(--ink);background:var(--surf2);padding:6px 10px;border-radius:10px}
+.wpanel .wdot{width:28px;height:28px;border-radius:8px;background:var(--ink);flex:none}
+.wpanel .fine:empty{display:none}
+.wpanel .fine{margin:0}

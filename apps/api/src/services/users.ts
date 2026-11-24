@@ -167,6 +167,21 @@ export async function linkWallet(ctx: Ctx, userId: string, wallet: string): Prom
 }
 
 /**
+ * Removes the wallet from an account that can still sign in another way (email or Google).
+ * Refused in chain mode, where the wallet holds the account's test tokens. Idempotent.
+ */
+export async function unlinkWallet(ctx: Ctx, userId: string): Promise<User> {
+  if (ctx.cfg.chain.mode !== 'off') throw conflict('In test-token mode the linked wallet holds your balance and cannot be removed.');
+  return ctx.db.$transaction(async (tx) => {
+    await lockUser(tx, userId);
+    const me = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+    if (!me.wallet) return me;
+    if (!me.email && !me.googleId) throw conflict('This wallet is how you sign in. Sign out instead, or add an email first.');
+    return tx.user.update({ where: { id: userId }, data: { wallet: null } });
+  });
+}
+
+/**
  * Puts an account under review, or clears it. In chain mode the wallet is frozen on-chain as
  * well (set_frozen), which blocks withdrawals there too.
  */
@@ -209,6 +224,7 @@ export function meUser(u: User, items: { avatars: number[]; frames: string[] }):
     level: levelOf(u.xp), boxes: u.boxes, freePractice: u.freePractice, refCode: u.refCode,
     stats: { plays: u.plays, spent: u.spent, won: u.won, duelsWon: u.duelsWon, duelsLost: u.duelsLost },
     items, flagged: u.flagged,
+    wallet: u.wallet, canUnlinkWallet: !!u.wallet && !!(u.email || u.googleId),
   };
 }
 

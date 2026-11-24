@@ -14,7 +14,7 @@ import { csrfFor } from '../plugins/csrf';
 import { rateLimit } from '../plugins/ratelimit';
 import { endSession, requireUser, startSession } from '../plugins/session';
 import { sendCode } from '../services/mailer';
-import { createGuest, linkWallet, signIn, type Identity, type SignInOpts } from '../services/users';
+import { createGuest, linkWallet, signIn, unlinkWallet, type Identity, type SignInOpts } from '../services/users';
 import { hmac, safeEqual, token } from '../util';
 import { parse } from './_util';
 
@@ -230,6 +230,15 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
     if (user.guest) throw new AppError(403, 'guest_not_allowed', 'Sign in first.');
     const u = await ctx.db.user.update({ where: { id: user.id }, data: { adult: true } });
     return answer(req, reply, u, false);
+  });
+
+  // Removes the wallet from this account (identity only; nothing on-chain changes).
+  app.post('/auth/wallet/unlink', async (req): Promise<OkResponse> => {
+    const user = requireUser(req);
+    if (user.guest) throw new AppError(403, 'guest_not_allowed', 'Sign in first.');
+    await rateLimit(ctx, 'authPerIp', req.ip);
+    await unlinkWallet(ctx, user.id);
+    return { ok: true };
   });
 
   app.post('/auth/logout', async (req, reply): Promise<OkResponse> => {

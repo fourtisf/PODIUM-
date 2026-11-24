@@ -173,6 +173,38 @@ describe('wallet (identity only)', () => {
   });
 });
 
+describe('wallet unlink', () => {
+  test('removes a linked wallet from an email account; refused when the wallet is the only sign-in; idempotent; guests and visitors refused', async () => {
+    // Email account + linked wallet → can unlink.
+    const c = await signUp(t);
+    const w = solanaWallet();
+    const n = await c.post<WalletNonceResponse>('/auth/wallet/nonce', { address: w.address });
+    expect((await c.post('/auth/wallet/link', { address: w.address, signature: w.sign(n.body.message) })).status).toBe(200);
+    let me = await c.get<MeResponse>('/me');
+    expect(me.body.user).toMatchObject({ wallet: w.address, canUnlinkWallet: true });
+    expect((await c.post('/auth/wallet/unlink', {})).status).toBe(200);
+    me = await c.get<MeResponse>('/me');
+    expect(me.body.user).toMatchObject({ wallet: null, canUnlinkWallet: false });
+    // Replaying the request changes nothing and still succeeds.
+    expect((await c.post('/auth/wallet/unlink', {})).status).toBe(200);
+    // The freed wallet can sign in again (as a new account) or be linked elsewhere.
+    expect(await t.ctx.db.user.count({ where: { wallet: w.address } })).toBe(0);
+
+    // Wallet-only account → refused (it would lock the player out).
+    const w2 = solanaWallet();
+    const v = await visitor(t);
+    const n2 = await v.post<WalletNonceResponse>('/auth/wallet/nonce', { address: w2.address });
+    expect((await v.post('/auth/wallet/verify', { address: w2.address, signature: w2.sign(n2.body.message), adult: true })).status).toBe(200);
+    expect((await v.get<MeResponse>('/me')).body.user.canUnlinkWallet).toBe(false);
+    expect(errCode(await v.post('/auth/wallet/unlink', {}))).toBe('conflict');
+    expect(await t.ctx.db.user.count({ where: { wallet: w2.address } })).toBe(1);
+
+    // Unauthorised: no account → 401; guest → 403.
+    expect((await (await visitor(t)).post('/auth/wallet/unlink', {})).status).toBe(401);
+    expect(errCode(await (await guest(t)).post('/auth/wallet/unlink', {}))).toBe('guest_not_allowed');
+  });
+});
+
 describe('google', () => {
   async function flow(c: Client, state?: string): Promise<{ location: string }> {
     const start = await c.get('/auth/google');

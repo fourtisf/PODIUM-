@@ -219,6 +219,7 @@ export function createClient(deps: ClientDeps) {
     chainConfig: () => get<ChainConfigResponse>('/chain/config'),
     chainStatus: () => get<ChainStatusResponse>('/chain/status'),
     walletLink: (b: { address: string; signature: string }) => post<AuthResponse>('/auth/wallet/link', b),
+    walletUnlink: () => post<OkResponse>('/auth/wallet/unlink'),
     /** The transaction signature is the idempotency key on the server. */
     depositConfirm: (signature: string) => post<DepositConfirmResponse>('/chain/deposit/confirm', { signature }),
     withdrawPrepare: (amount: number) => post<WithdrawPrepareResponse>('/chain/withdraw/prepare', { amount }, `withdraw:${amount}`),

@@ -116,3 +116,34 @@ export const hasOtherWallet = (): boolean => {
   const w = win();
   return !!w && usable(w.solana) && !WALLETS.some((x) => raw(x.id) === w.solana) && !WALLETS.some((x) => walletInstalled(x.id));
 };
+
+/** The listed wallet the player last picked, if any (for showing its logo). */
+export const selectedWalletOption = (): WalletOption | undefined => {
+  const id = selectedWallet();
+  return id ? WALLETS.find((w) => w.id === id) : undefined;
+};
+
+/** Disconnects the site from the wallet extension (where it supports that) and forgets the choice. */
+export async function disconnectWallet(): Promise<void> {
+  const w = win();
+  const ids = WALLETS.map((x) => x.id);
+  for (const id of ids) {
+    const p = raw(id);
+    try {
+      if (p && typeof p.disconnect === 'function') await (p.disconnect as () => Promise<unknown>)();
+    } catch {
+      /* the extension refused or is already disconnected */
+    }
+  }
+  try {
+    const s = w?.solana as RawProvider | undefined;
+    if (s && typeof s.disconnect === 'function') await (s.disconnect as () => Promise<unknown>)();
+  } catch {
+    /* ignore */
+  }
+  try {
+    localStorage.removeItem(KEY);
+  } catch {
+    /* private mode */
+  }
+}
