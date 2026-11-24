@@ -178,7 +178,12 @@ export function PlaySide({ side, game, mode, snap }: { side: 'l' | 'r'; game: Ga
     all.sort((a, b) => b.s - a.s || Number(a.me) - Number(b.me));
     // Places count real players only; bot benchmarks slot in by score (a tie goes to the player) with no place.
     const placed = all.map((r, i) => ({ ...r, place: i + 1 }));
-    const bots = s.bots.map((r) => ({ n: r.n, s: r.s, me: false, bot: true, place: 0 }));
+    // Only the next two bots above the live score, so real players stay in view and there is always a next target.
+    const bots = s.bots
+      .filter((r) => r.s > s.score)
+      .sort((a, b) => a.s - b.s)
+      .slice(0, 2)
+      .map((r) => ({ n: r.n, s: r.s, me: false, bot: true, place: 0 }));
     const merged = placed.concat(bots).sort((a, b) => b.s - a.s || Number(a.bot) - Number(b.bot));
     const mine = merged.findIndex((r) => r.me);
     const top = merged.slice(0, 5);
