@@ -9,6 +9,12 @@ export const DEFAULT_LANG: Lang = 'en';
 /** The cookie that holds the visitor's choice. Server components read it, so the first paint is right. */
 export const LANG_COOKIE = 'lang';
 
+/**
+ * Indonesian is built in but switched off: the site is English only unless NEXT_PUBLIC_ENABLE_ID=on
+ * at build time. When off, the language switch is hidden and every visitor gets English.
+ */
+export const ID_ENABLED = process.env.NEXT_PUBLIC_ENABLE_ID === 'on';
+
 export const isLang = (v: unknown): v is Lang => v === 'en' || v === 'id';
 
 /** A translation of an English dictionary: same keys, string values. */

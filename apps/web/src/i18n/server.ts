@@ -4,7 +4,7 @@ import 'server-only';
 import { cache } from 'react';
 import { cookies, headers } from 'next/headers';
 import { CHAIN_ON } from '@/lib/chain';
-import { LANG_COOKIE, makeT, pickLang, type Lang } from './core';
+import { ID_ENABLED, LANG_COOKIE, makeT, pickLang, type Lang } from './core';
 import { Content } from './content';
 import type { IdAreas, IdBundle } from './client';
 import { commonEn } from './dict/common.en';
@@ -22,7 +22,7 @@ import { profileId } from './dict/profile.id';
 import { shopId } from './dict/shop.id';
 import { walletId } from './dict/wallet.id';
 
-export const getLang = cache((): Lang => pickLang(cookies().get(LANG_COOKIE)?.value, headers().get('accept-language')));
+export const getLang = cache((): Lang => (ID_ENABLED ? pickLang(cookies().get(LANG_COOKIE)?.value, headers().get('accept-language')) : 'en'));
 
 const SERVER = {
   pages: [pagesEn, pagesId],

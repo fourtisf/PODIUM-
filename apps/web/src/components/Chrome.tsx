@@ -12,6 +12,7 @@ import { useT } from '@/i18n/client';
 import { tickerText } from '@/i18n/content';
 import { commonEn } from '@/i18n/dict/common.en';
 import { LangSwitch } from './LangSwitch';
+import { ID_ENABLED } from '@/i18n/core';
 import WalletPicker from './WalletPicker';
 import { useWalletActions } from './useWalletActions';
 import { useSession } from './Session';
@@ -387,7 +388,7 @@ export function Footer() {
             </a>
           </>
         )}
-        <LangSwitch />
+        {ID_ENABLED && <LangSwitch />}
       </div>
     </footer>
   );
