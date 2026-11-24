@@ -584,6 +584,12 @@ function SignInSheet({ onClose, onDone, toast, storedRef, chainOn }: { onClose()
           </button>
           );
 
+  const agree = (
+    <p className="fine">
+      By signing in you agree to the <a href="/terms" target="_blank" rel="noopener">Terms</a> and the <a href="/privacy" target="_blank" rel="noopener">Privacy policy</a>.
+    </p>
+  );
+
   return (
     <>
     <div className="scrim on" id="signin" role="dialog" aria-modal="true" aria-label="Sign in" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -606,6 +612,7 @@ function SignInSheet({ onClose, onDone, toast, storedRef, chainOn }: { onClose()
             {emailForm}
             {googleLink}
             <p className="fine">Your wallet signs you in and holds your tChips. tChips are a devnet test token with no value.</p>
+            {agree}
           </>
         ) : (
           <>
@@ -615,6 +622,7 @@ function SignInSheet({ onClose, onDone, toast, storedRef, chainOn }: { onClose()
             {googleLink}
             {walletButton}
             <p className="fine">A wallet is used to prove who you are only. tChips are test chips with no value.</p>
+            {agree}
           </>
         )}
       </div>

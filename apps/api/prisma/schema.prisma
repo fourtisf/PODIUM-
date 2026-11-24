@@ -293,3 +293,18 @@ model Withdrawal {
   @@index([userId, status])
   @@index([status])
 }
+
+// Audit trail of every operator action taken through /api/admin (approve, reject, flag, clear hold).
+model AdminAction {
+  id           String   @id @default(cuid())
+  createdAt    DateTime @default(now())
+  adminId      String
+  action       String // "run.approve" | "run.reject" | "user.flag" | "user.unflag" | "user.clear_hold"
+  targetUserId String?
+  targetRunId  String?
+  note         String?
+
+  @@index([createdAt])
+  @@index([targetUserId, createdAt])
+  @@index([targetRunId])
+}

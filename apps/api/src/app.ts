@@ -17,6 +17,7 @@ import { createDb } from './plugins/db';
 import { registerRateLimits } from './plugins/ratelimit';
 import { createRedis } from './plugins/redis';
 import { registerSessions } from './plugins/session';
+import adminRoutes from './routes/admin';
 import authRoutes from './routes/auth';
 import chainRoutes from './routes/chain';
 import challengeRoutes from './routes/challenges';
@@ -118,6 +119,7 @@ export async function buildApp(opts: AppOptions = {}): Promise<FastifyInstance> 
       await api.register(rewardRoutes);
       await api.register(notificationRoutes);
       await api.register(chainRoutes);
+      await api.register(adminRoutes);
     },
     { prefix: '/api' },
   );

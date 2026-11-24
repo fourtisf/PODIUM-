@@ -38,6 +38,20 @@ export function tokenCa(v: string | undefined = envCa()): string | null {
   return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a) ? a : null;
 }
 
+function envContact(): string | undefined {
+  try {
+    return process.env.NEXT_PUBLIC_CONTACT_EMAIL || process.env.CONTACT_EMAIL;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The contact address shown on /terms and /privacy, or null until CONTACT_EMAIL / NEXT_PUBLIC_CONTACT_EMAIL is set. */
+export function contactEmail(v: string | undefined = envContact()): string | null {
+  const e = (v ?? '').trim();
+  return /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(e) ? e : null;
+}
+
 export const BRAND = {
   name: envName() || 'Climb Games',
   line: 'Skill games with weekly prize pools',

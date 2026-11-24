@@ -9,7 +9,7 @@ import type { Ctx } from '../src/ctx';
 
 export const GAME: GameKey = 'duck';
 export const OTHER_GAME: GameKey = 'glide';
-const TABLES = ['Activity', 'Notification', 'ReferralReward', 'SeasonClaim', 'MissionProgress', 'Challenge', 'Run', 'Duel', 'Score', 'Period', 'Idempotency', 'Ledger', 'Item', 'Counter', 'User'];
+const TABLES = ['AdminAction', 'Activity', 'Notification', 'ReferralReward', 'SeasonClaim', 'MissionProgress', 'Challenge', 'Run', 'Duel', 'Score', 'Period', 'Idempotency', 'Ledger', 'Item', 'Counter', 'User'];
 
 export interface TestApp {
   app: FastifyInstance;

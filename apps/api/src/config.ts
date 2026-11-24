@@ -43,6 +43,8 @@ export function parseChainMode(raw: string | undefined): ChainSettings['mode'] {
 const countries = (raw: string | undefined): string[] =>
   (raw ?? '').split(/[\s,;]+/).map((c) => c.trim().toUpperCase()).filter(Boolean);
 
+const list = (raw: string | undefined): string[] => (raw ?? '').split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
+
 export interface Config {
   env: 'development' | 'test' | 'production';
   port: number;
@@ -60,6 +62,9 @@ export interface Config {
   requireStream: boolean;
   /** Multiplies every rate limit; tests raise it so they are not throttled. */
   rateScale: number;
+  /** Operators: an account whose email (case-insensitive) or wallet is listed may use /api/admin. */
+  adminEmails: string[];
+  adminWallets: string[];
   chain: ChainSettings;
 }
 
@@ -92,6 +97,8 @@ export function loadConfig(over: Partial<Config> = {}): Config {
     emailFrom: e.EMAIL_FROM || `${BRAND.name} <no-reply@example.com>`,
     requireStream: e.REQUIRE_STREAM !== '0',
     rateScale: Number(e.RATE_LIMIT_SCALE || 1) || 1,
+    adminEmails: list(e.ADMIN_EMAILS).map((x) => x.toLowerCase()),
+    adminWallets: list(e.ADMIN_WALLETS),
     chain: {
       mode: parseChainMode(e.CHAIN_MODE),
       rpcUrl: (e.SOLANA_RPC_URL || '').trim(),

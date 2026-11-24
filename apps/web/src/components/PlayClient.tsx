@@ -18,6 +18,7 @@ import {
 import { renderShareCard } from '@/lib/sharecard';
 import type { Scene3D } from '@/game3d/types';
 import { runCost, useSession } from './Session';
+import { TutorialCard, markTutorialSeen, tutorialSeen } from './Tutorial';
 import { Cover } from './ui';
 
 type Phase = 'loading' | 'count' | 'play' | 'pause' | 'dying' | 'saving' | 'over';
@@ -86,6 +87,16 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
   const [xpOn, setXpOn] = useState(false);
   const [share, setShare] = useState<{ img: string | null; link: string } | null>(null);
   const [sharing, setSharing] = useState(false);
+  // First run of this game in this browser: the how-to-play card, dismissed before the run starts.
+  const [tut, setTut] = useState(false);
+  const tutDone = useRef<(() => void) | null>(null);
+  const closeTut = useCallback(() => {
+    markTutorialSeen(game);
+    setTut(false);
+    const f = tutDone.current;
+    tutDone.current = null;
+    f?.();
+  }, [game]);
   const shareOpen = useRef(false);
   shareOpen.current = !!share;
 
@@ -605,6 +616,14 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
             return;
           }
         }
+        // The card comes before POST /runs: the run (and the server's clock for it) starts only once it is dismissed.
+        if (!tutorialSeen(game)) {
+          await new Promise<void>((resolve) => {
+            tutDone.current = resolve;
+            setTut(true);
+          });
+          if (!alive) return;
+        }
         const targetsP = loadTargets().catch(() => null);
         start = await api.startRun({ game, mode, ...(duelId ? { duelId } : {}), ...(code ? { challengeCode: code } : {}) });
         if (!alive) return;
@@ -784,6 +803,7 @@ export function PlayClient({ game, mode, duelId, code, forcePad }: { game: GameK
           <div className="ghint" id="oKeys" ref={hintRef}>
             {g.keys}
           </div>
+          {tut && phase === 'loading' && <TutorialCard game={game} onDone={closeTut} />}
           <div className={`veil pause ${phase === 'pause' ? 'on' : ''}`} id="pauseP">
             <div className="rc">
               <h3>Paused</h3>

@@ -32,10 +32,10 @@ export async function trackRun(tx: Tx, userId: string, day: number, e: RunEvent,
   return done;
 }
 
-/** A duel the creator wins is settled by the joiner's run, so the creator's "Win a duel" mission is credited here. */
+/** A duel the creator wins is settled by the joiner's run, so the creator's "Win a duel or beat a challenge" mission is credited here. */
 export function trackDuelWin(tx: Tx, userId: string, day: number, game: string, at: Date): Promise<MissionId[]> {
   if (!missionsForDay(day).some((m) => m.id === 'd1')) return Promise.resolve([]);
-  return trackOnly(tx, userId, day, 'd1', { game, mode: 'duel', newBest: false, duelWin: true, seconds: 0 }, at);
+  return trackOnly(tx, userId, day, 'd1', { game, mode: 'duel', newBest: false, duelWin: true, challengeWin: false, seconds: 0 }, at);
 }
 
 async function trackOnly(tx: Tx, userId: string, day: number, id: MissionId, e: RunEvent, at: Date): Promise<MissionId[]> {

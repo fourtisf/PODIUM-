@@ -13,7 +13,7 @@ export const MISSIONS: MissionDef[] = [
   { id: 'r3', title: 'Play 3 ranked runs', target: 3, chips: 150, xp: 40 },
   { id: 'g2', title: 'Play 2 different games', target: 2, chips: 120, xp: 40 },
   { id: 'pb', title: 'Set a new personal best', target: 1, chips: 200, xp: 60 },
-  { id: 'd1', title: 'Win a duel', target: 1, chips: 200, xp: 60 },
+  { id: 'd1', title: 'Win a duel or beat a challenge', target: 1, chips: 200, xp: 60 },
   { id: 's45', title: 'Survive 45 seconds in one run', target: 1, chips: 150, xp: 50 },
   { id: 'p5', title: 'Finish 5 runs of any kind', target: 5, chips: 100, xp: 30 },
 ];
@@ -29,6 +29,8 @@ export interface RunEvent {
   mode: 'ranked' | 'practice' | 'cup' | 'duel' | 'challenge';
   newBest: boolean;
   duelWin: boolean;
+  /** An accepted challenge run that beat the target score of someone else's challenge. */
+  challengeWin: boolean;
   seconds: number;
 }
 
@@ -44,7 +46,7 @@ export function missionGain(id: MissionId, e: RunEvent, games: string[]): number
     case 'pb':
       return e.newBest ? 1 : 0;
     case 'd1':
-      return e.duelWin && e.mode === 'duel' ? 1 : 0;
+      return (e.duelWin && e.mode === 'duel') || (e.challengeWin && e.mode === 'challenge') ? 1 : 0;
     case 's45':
       return e.seconds >= 45 ? 1 : 0;
     case 'p5':

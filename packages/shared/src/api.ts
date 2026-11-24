@@ -376,6 +376,20 @@ export interface ChallengeResponse extends PlayerRef {
   score: number;
 }
 
+/** A ghost: a real player's accepted run from this week's board, playable as a free challenge (XP only). */
+export interface GhostEntry extends PlayerRef {
+  /** Challenge code to play against it (`mode: 'challenge'`, `challengeCode`). */
+  code: string;
+  score: number;
+  /** The run's place on this week's board. */
+  place: number;
+}
+/** GET /ghosts/:game: up to five of the best real runs of the current week, the caller's own excluded. */
+export interface GhostsResponse {
+  game: GameKey;
+  ghosts: GhostEntry[];
+}
+
 // ---------------------------------------------------------------- rewards
 /** tChips paid from the daily emissions budget. */
 export interface EmissionPaid {
@@ -459,6 +473,99 @@ export interface NotificationsResponse {
 
 export interface HealthResponse {
   ok: boolean;
+}
+
+// ---------------------------------------------------------------- admin (operators only)
+export interface AdminOverviewResponse {
+  users: number;
+  signedInUsers: number;
+  runsToday: number;
+  flaggedPending: number;
+  rejectedToday: number;
+  openDuels: number;
+  /** Fees recorded today (UTC), in tChips. */
+  feesToday: number;
+  pools: { game: GameKey; pool: number; endsAt: string }[];
+  cup: { game: GameKey; pool: number; endsAt: string };
+  /** Only while chain mode is on. */
+  chain: { pendingOps: number; failedOps: number; holds: number } | null;
+}
+export interface AdminPressStats {
+  presses: number;
+  peakPerSecond: number;
+  intervalCv: number;
+}
+export interface AdminRunRow {
+  id: string;
+  user: { id: string; name: string };
+  game: GameKey;
+  mode: RunMode;
+  status: RunStatus;
+  score: number | null;
+  clientScore: number | null;
+  reason: string | null;
+  frames: number | null;
+  createdAt: string;
+  finishedAt: string | null;
+  /** null when the run has no stored input log. */
+  press: AdminPressStats | null;
+}
+export interface AdminRunsResponse {
+  runs: AdminRunRow[];
+  /** Pass as `cursor` for the next page; null on the last page. */
+  next: string | null;
+}
+export interface AdminUserRow {
+  id: string;
+  name: string;
+  email: string | null;
+  wallet: string | null;
+  guest: boolean;
+  flagged: boolean;
+  chainHold: boolean;
+  balance: number;
+  createdAt: string;
+}
+export interface AdminUsersResponse {
+  users: AdminUserRow[];
+}
+export interface AdminUserDetail extends AdminUserRow {
+  adult: boolean;
+  xp: number;
+  level: number;
+  avatar: number;
+  frame: string;
+  googleLinked: boolean;
+  stats: MeUser['stats'];
+  validatedRanked: number;
+  lastIp: string | null;
+  ledger: { id: string; createdAt: string; amount: number; reason: string; ref: string | null }[];
+  runs: AdminRunRow[];
+  actions: AdminActionItem[];
+}
+export interface AdminActionItem {
+  id: string;
+  createdAt: string;
+  admin: string;
+  action: string;
+  targetUserId: string | null;
+  targetRunId: string | null;
+  note: string | null;
+}
+export interface AdminNoteBody {
+  note?: string;
+}
+export interface AdminFlagBody {
+  flagged: boolean;
+  note?: string;
+}
+export interface AdminRunActionResponse {
+  ok: true;
+  run: AdminRunRow;
+}
+export interface AdminUserActionResponse {
+  ok: true;
+  user: AdminUserRow;
 }
 
 // ---------------------------------------------------------------- Phase 3: devnet test token

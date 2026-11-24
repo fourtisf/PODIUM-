@@ -3,7 +3,7 @@
 // (play against its stored score) or creates one (play now, then wait for an opponent).
 import { useEffect, useState } from 'react';
 import { ECONOMY, GAMES, GAME_KEYS, duelPayout, fmt, hashName } from '@podium/shared';
-import type { DuelView, DuelsResponse, GameKey } from '@podium/shared';
+import type { DuelView, DuelsResponse, GameKey, GhostEntry } from '@podium/shared';
 import { api } from '@/lib/api';
 import { useSession } from './Session';
 import { Avatar, FramedAvatar } from './ui';
@@ -17,9 +17,23 @@ export function DuelsView({ initial }: { initial: DuelsResponse | null }) {
   const [game, setGame] = useState<GameKey>(initial?.open?.game ?? 'blaster');
   const [stake, setStake] = useState<number>(initial?.open?.stake ?? ECONOMY.duelStakes[1]);
   const [busy, setBusy] = useState(false);
+  // Ghosts: real players' best runs this week for the chosen game, playable free as challenges.
+  const [ghosts, setGhosts] = useState<{ game: GameKey; list: GhostEntry[] } | null>(null);
   useEffect(() => {
     if (initial) setData(initial);
   }, [initial]);
+  useEffect(() => {
+    let live = true;
+    api.ghosts(game).then(
+      (r) => live && setGhosts({ game, list: r.ghosts }),
+      () => live && setGhosts({ game, list: [] }),
+    );
+    return () => {
+      live = false;
+    };
+  }, [game, me?.user.id]);
+  const ghostList = ghosts && ghosts.game === game ? ghosts.list : null;
+  const chase = (g: GhostEntry) => s.play(game, 'challenge', { code: g.code });
   // The session may have changed (sign-in) since the server render.
   const signedIn = !!me && !me.user.guest;
   useEffect(() => {
@@ -114,6 +128,12 @@ export function DuelsView({ initial }: { initial: DuelsResponse | null }) {
                   Play duel <b className="num">{m.stake}</b>
                 </button>
               </div>
+              {!m.opponent && (
+                <div className="ghostsNow">
+                  <div className="lbl">Nobody is waiting yet. While you wait, beat a real run</div>
+                  <GhostList list={ghostList} limit={3} onPlay={chase} />
+                </div>
+              )}
             </>
           ) : (
             <>
@@ -132,6 +152,7 @@ export function DuelsView({ initial }: { initial: DuelsResponse | null }) {
             </>
           )}
         </div>
+        <div className="duelSide">
         <div className="panelx" id="duelR">
           <h3>Your duels</h3>
           <p style={{ color: 'var(--soft)', margin: '0 0 8px' }}>
@@ -178,7 +199,38 @@ export function DuelsView({ initial }: { initial: DuelsResponse | null }) {
             <p style={{ color: 'var(--dim)', margin: '14px 0 0' }}>No duels yet. Pick a game and a stake to start.</p>
           )}
         </div>
+        <div className="panelx" id="ghosts">
+          <h3>Beat a real run</h3>
+          <p className="ghostsSub">
+            The best {GAMES[game].name} runs this week, played by real players. Free · XP only.
+          </p>
+          <GhostList list={ghostList} limit={5} onPlay={chase} />
+        </div>
+        </div>
       </div>
     </section>
+  );
+}
+
+/** Real recorded runs to chase. A ghost is another player's accepted run, never a generated one. */
+function GhostList({ list, limit, onPlay }: { list: GhostEntry[] | null; limit: number; onPlay(g: GhostEntry): void }) {
+  if (!list) return <p className="ghostsEmpty">Loading runs…</p>;
+  if (!list.length) return <p className="ghostsEmpty">No runs to chase yet this week. Set the first score.</p>;
+  return (
+    <ul className="dh ghostList">
+      {list.slice(0, limit).map((g) => (
+        <li key={g.code}>
+          <FramedAvatar id={g.avatar} frame={g.frame} size={30} />
+          <span>
+            <b>{g.name}</b> · #{g.place}
+            <small>Free · XP only</small>
+          </span>
+          <b className="num">{fmt(g.score)}</b>
+          <button className="sbtn" onClick={() => onPlay(g)} aria-label={`Play free against ${g.name}'s ${fmt(g.score)}`}>
+            Play free
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }

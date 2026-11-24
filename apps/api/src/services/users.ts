@@ -170,11 +170,14 @@ export async function linkWallet(ctx: Ctx, userId: string, wallet: string): Prom
  * Puts an account under review, or clears it. In chain mode the wallet is frozen on-chain as
  * well (set_frozen), which blocks withdrawals there too.
  */
-export async function setFlagged(ctx: Ctx, userId: string, flagged: boolean): Promise<void> {
-  await ctx.db.$transaction(async (tx) => {
-    const u = await tx.user.update({ where: { id: userId }, data: { flagged } });
-    if (u.wallet) await enqueueOp(ctx, tx, 'setFrozen', `frozen:${userId}:${+ctx.clock.now()}`, { wallet: u.wallet, frozen: flagged }, userId);
-  });
+export async function setFlagged(ctx: Ctx, userId: string, flagged: boolean, tx?: Tx): Promise<User> {
+  const apply = async (t: Tx): Promise<User> => {
+    const u = await t.user.update({ where: { id: userId }, data: { flagged } });
+    if (u.wallet) await enqueueOp(ctx, t, 'setFrozen', `frozen:${userId}:${+ctx.clock.now()}`, { wallet: u.wallet, frozen: flagged }, userId);
+    return u;
+  };
+  // Inside the caller's transaction (the admin route), or in one of its own.
+  return tx ? apply(tx) : ctx.db.$transaction(apply);
 }
 
 // ---------------------------------------------------------------- views

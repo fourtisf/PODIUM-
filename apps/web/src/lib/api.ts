@@ -3,6 +3,12 @@
 // Idempotency-Key that is reused when the same user action is retried after a network error.
 import type {
   ActivityResponse,
+  AdminOverviewResponse,
+  AdminRunActionResponse,
+  AdminRunsResponse,
+  AdminUserActionResponse,
+  AdminUserDetail,
+  AdminUsersResponse,
   ApiErrorCode,
   AuthResponse,
   BoardResponse,
@@ -21,6 +27,7 @@ import type {
   FinishRunResponse,
   GameKey,
   GamesResponse,
+  GhostsResponse,
   MeResponse,
   MissionClaimResponse,
   NotificationsResponse,
@@ -197,6 +204,7 @@ export function createClient(deps: ClientDeps) {
     // ---- challenges
     createChallenge: (runId: string) => post<CreateChallengeResponse>('/challenges', { runId }, `challenge:${runId}`),
     challenge: (code: string) => get<ChallengeResponse>(`/challenges/${encodeURIComponent(code)}`),
+    ghosts: (game: GameKey) => get<GhostsResponse>(`/ghosts/${game}`),
     // ---- rewards
     claimMission: (id: string) => post<MissionClaimResponse>(`/missions/${id}/claim`, {}, `mission:${id}`),
     claimStreak: () => post<StreakClaimResponse>('/streak/claim', {}, 'streak'),
@@ -216,6 +224,17 @@ export function createClient(deps: ClientDeps) {
     withdrawPrepare: (amount: number) => post<WithdrawPrepareResponse>('/chain/withdraw/prepare', { amount }, `withdraw:${amount}`),
     withdrawSubmit: (withdrawId: string, signedTx: string) => post<WithdrawSubmitResponse>('/chain/withdraw/submit', { withdrawId, signedTx }),
     faucet: () => post<FaucetResponse>('/chain/faucet'),
+    // ---- operators only (/admin)
+    adminOverview: () => get<AdminOverviewResponse>('/admin/overview'),
+    adminRuns: (status: 'flagged' | 'rejected', cursor?: string) =>
+      get<AdminRunsResponse>(`/admin/runs?status=${status}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`),
+    adminApprove: (runId: string, note: string) => post<AdminRunActionResponse>(`/admin/runs/${encodeURIComponent(runId)}/approve`, { note }, `admin:approve:${runId}`),
+    adminReject: (runId: string, note: string) => post<AdminRunActionResponse>(`/admin/runs/${encodeURIComponent(runId)}/reject`, { note }, `admin:reject:${runId}`),
+    adminUsers: (q: string) => get<AdminUsersResponse>(`/admin/users?q=${encodeURIComponent(q)}`),
+    adminUser: (id: string) => get<AdminUserDetail>(`/admin/users/${encodeURIComponent(id)}`),
+    adminFlag: (id: string, flagged: boolean, note: string) =>
+      post<AdminUserActionResponse>(`/admin/users/${encodeURIComponent(id)}/flag`, { flagged, note }, `admin:flag:${id}:${flagged}`),
+    adminClearHold: (id: string, note: string) => post<AdminUserActionResponse>(`/admin/users/${encodeURIComponent(id)}/clear-hold`, { note }, `admin:hold:${id}`),
   };
 }
 

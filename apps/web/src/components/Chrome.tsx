@@ -7,6 +7,7 @@ import { BRAND, fmt, tokenCa, xUrl } from '@podium/shared';
 import type { ActivityItem, NotificationItem } from '@podium/shared';
 import { api } from '@/lib/api';
 import { onlyBold } from '@/lib/sanitize';
+import { dedupeActivity, tickerScrolls } from '@/lib/ticker';
 import { useSession } from './Session';
 import { FramedAvatar, Mark } from './ui';
 
@@ -164,20 +165,48 @@ export function Ticker({ initial }: { initial: ActivityItem[] }) {
       </div>
     );
   }
-  // The marquee scrolls by half its width, so the list is laid out twice; a short list is
-  // repeated until one half is wide enough to fill the screen.
-  const shown = items.slice(0, 12);
-  const half: ActivityItem[] = [];
-  while (half.length < 12) half.push(...shown);
+  return <TickerRow items={items} />;
+}
+
+function TickerRow({ items }: { items: ActivityItem[] }) {
+  const shown = dedupeActivity(items);
+  const wrap = useRef<HTMLDivElement>(null);
+  const track = useRef<HTMLDivElement>(null);
+  // Scroll only when one copy of the events is at least as wide as the bar; then the doubled track
+  // shows every event exactly twice. Otherwise (and on the server) the events are listed once, still.
+  const [scroll, setScroll] = useState(false);
+  const key = shown.map((f) => f.name + '\u0001' + f.text + '\u0001' + f.game).join('\u0002');
+  useEffect(() => {
+    const measure = () => {
+      const w = wrap.current?.clientWidth ?? 0;
+      const el = track.current;
+      // Width of one copy of the events: the whole track when static, half of it when doubled.
+      const one = el ? el.scrollWidth / Number(el.dataset.copies || 1) : 0;
+      setScroll(tickerScrolls(shown.length, one, w));
+    };
+    measure();
+    addEventListener('resize', measure);
+    return () => removeEventListener('resize', measure);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, shown.length]);
   const row = (k: string) =>
-    half.map((f, i) => (
+    shown.map((f, i) => (
       <span key={k + i}>
         <b>{f.name}</b> {f.text} <i>{f.game}</i>
       </span>
     ));
+  if (!scroll) {
+    return (
+      <div className="tick" ref={wrap}>
+        <div className="static" ref={track} data-copies="1">
+          {row('a')}
+        </div>
+      </div>
+    );
+  }
   return (
-    <div className="tick">
-      <div>
+    <div className="tick" ref={wrap}>
+      <div ref={track} data-copies="2">
         {row('a')}
         {row('b')}
       </div>
@@ -254,7 +283,7 @@ export function Footer() {
   return (
     <footer>
       <div className="wrap">
-        {BRAND.name} beta. All amounts are tChips with no value.
+        {BRAND.name} beta. All amounts are tChips with no value. <Link href="/terms">Terms</Link> · <Link href="/privacy">Privacy</Link>
         {x && (
           <>
             {' '}

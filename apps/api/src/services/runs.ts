@@ -231,8 +231,22 @@ export async function settleRun(ctx: Ctx, tx: Tx, runId: string, input: RunInput
     });
   }
 
-  const score = verdict.score;
-  const seconds = verdict.seconds;
+  return save(200, await creditAccepted(ctx, tx, run, verdict.score, verdict.seconds, now, after));
+}
+
+/**
+ * Everything an accepted run earns: board, XP, box roll, duel or challenge outcome, referral and
+ * missions. Shared by a normal finish and by an operator approving a flagged run. The caller has
+ * claimed the run (so this runs once per run) and holds the player's row lock.
+ */
+async function creditAccepted(ctx: Ctx, tx: Tx, run: Run, score: number, seconds: number, now: Date, after: After[]): Promise<FinishRunResponse> {
+  const runId = run.id;
+  const game = run.game as GameKey;
+  const mode = run.mode as RunMode;
+  const userView = async (): Promise<FinishRunResponse['user']> => {
+    const u = await tx.user.findUniqueOrThrow({ where: { id: run.userId } });
+    return { balance: u.balance, xp: u.xp, level: levelOf(u.xp), boxes: u.boxes };
+  };
   const badges: RunBadge[] = [];
   let xp = 0;
   let place = 0;
@@ -240,6 +254,7 @@ export async function settleRun(ctx: Ctx, tx: Tx, runId: string, input: RunInput
   let boxDropped = false;
   let prizeIfHeld = 0;
   let duelWin = false;
+  let challengeWin = false;
   let rows: FinishRunResponse['top5'] = [];
   let duel: FinishRunResponse['duel'];
   let challenge: FinishRunResponse['challenge'];
@@ -308,6 +323,8 @@ export async function settleRun(ctx: Ctx, tx: Tx, runId: string, input: RunInput
     const ch = await tx.challenge.findUnique({ where: { code: run.challengeCode } });
     if (ch) {
       const won = score > ch.score;
+      // Beating someone else's challenge counts for the "win a duel or beat a challenge" mission (every attempt, not only the first).
+      challengeWin = won && ch.userId !== me.id;
       const owner = await tx.user.findUnique({ where: { id: ch.userId }, select: { name: true } });
       // Challenge runs are free, so XP is given for the first attempt at each challenge only.
       const first = (await tx.run.count({ where: { userId: me.id, challengeCode: ch.code, status: 'finished', id: { not: runId } } })) === 0;
@@ -324,11 +341,44 @@ export async function settleRun(ctx: Ctx, tx: Tx, runId: string, input: RunInput
     }
   } else badges.push('not_recorded');
 
-  const missionsCompleted: MissionId[] = await trackRun(tx, me.id, dayNum(now), { game, mode, newBest, duelWin, seconds }, now);
-  return save(200, {
+  const missionsCompleted: MissionId[] = await trackRun(tx, me.id, dayNum(now), { game, mode, newBest, duelWin, challengeWin, seconds }, now);
+  return {
     runId, status: 'finished', game, mode, score, place, newBest, xpGained: xp, boxDropped, badges, prizeIfHeld, rewardsHeld: false,
     ...(duel ? { duel } : {}), ...(challenge ? { challenge } : {}), top5: rows, user: await userView(), missionsCompleted,
-  });
+  };
+}
+
+// ---------------------------------------------------------------- review of flagged runs (operators)
+/**
+ * Approves a flagged run: it is settled exactly as an accepted run would have been (board, XP, box
+ * roll, missions), at the time of approval. The conditional update (flagged → finished) makes this
+ * happen at most once per run. A duel that was forfeited when the run was flagged stays forfeited.
+ */
+export async function approveFlaggedRun(ctx: Ctx, tx: Tx, runId: string): Promise<{ result: FinishRunResponse; after: After }> {
+  const now = ctx.clock.now();
+  const pre = await tx.run.findUnique({ where: { id: runId } });
+  if (!pre) throw notFound('No such run.');
+  await lockUser(tx, pre.userId);
+  const claimed = await tx.run.updateMany({ where: { id: runId, status: 'flagged' }, data: { status: 'finished', rewardsHeld: false } });
+  if (claimed.count === 0) throw conflict('That run is not waiting for review.');
+  const run: Run = { ...pre, status: 'finished', rewardsHeld: false };
+  const after: After[] = [];
+  const result = await creditAccepted(ctx, tx, run, pre.score ?? 0, (pre.frames ?? 0) / 60, now, after);
+  // A later finish of the same run (the player's client retrying) now gets the approved answer.
+  const body = result as unknown as object;
+  await tx.idempotency.upsert({ where: { key: runResultKey(runId) }, create: { key: runResultKey(runId), status: 200, body, createdAt: now }, update: { status: 200, body } });
+  return { result, after: async () => { for (const a of after) await a(); } };
+}
+
+/** Rejects a flagged run: nothing is paid and the entry is not refunded. */
+export async function rejectFlaggedRun(ctx: Ctx, tx: Tx, runId: string): Promise<void> {
+  const pre = await tx.run.findUnique({ where: { id: runId } });
+  if (!pre) throw notFound('No such run.');
+  const reason = `rejected after review${pre.reason ? ` (${pre.reason})` : ''}`.slice(0, 500);
+  const claimed = await tx.run.updateMany({ where: { id: runId, status: 'flagged' }, data: { status: 'rejected', rewardsHeld: false, reason } });
+  if (claimed.count === 0) throw conflict('That run is not waiting for review.');
+  const body = new AppError(422, 'run_rejected', reason).body() as unknown as object;
+  await tx.idempotency.upsert({ where: { key: runResultKey(runId) }, create: { key: runResultKey(runId), status: 422, body, createdAt: ctx.clock.now() }, update: { status: 422, body } });
 }
 
 /** The stored answer of a run that is no longer open, or null. */

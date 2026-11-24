@@ -24,6 +24,9 @@ a.btn{text-decoration:none}
 
 /* Ticker with nothing to scroll. */
 .tick div.quiet{animation:none;color:var(--dim)}
+/* Too few events to fill the bar: listed once, left aligned, no marquee (swipe if they overflow). */
+.tick div.static{animation:none;display:block;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.tick div.static::-webkit-scrollbar{display:none}
 
 /* Empty rows, in the list styles they sit in. */
 .top3 li.none{color:var(--dim)}
@@ -86,3 +89,49 @@ h1 .tag{vertical-align:middle;margin-left:12px;font-family:var(--body);letter-sp
 .cabar .calbl,.cabar .cacopy{flex:none}
 a.hbtn{color:inherit}
 footer a{color:inherit}
+
+/* Terms and Privacy: the Rules page's panels, with a date line and readable links. */
+.legalDate{color:var(--dim);font-size:14px;margin:10px 0 0}
+.legal .about a{color:var(--ink);text-decoration:underline;text-underline-offset:2px}
+#signin .fine a{color:var(--soft);text-decoration:underline;text-underline-offset:2px}
+
+/* Duels: "Beat a real run" (ghosts are real players' recorded runs, played free as challenges). */
+.duelSide{display:grid;gap:22px;align-content:start}
+#ghosts h3{margin:0 0 4px}
+.ghostsSub{color:var(--soft);margin:0 0 8px;font-size:14px}
+.ghostsEmpty{color:var(--dim);margin:10px 0 0;font-size:14.5px}
+.ghostList li{gap:10px}
+.ghostList .avw{flex:none}
+.ghostList .sbtn{flex:none}
+.ghostList span small{display:block;color:var(--dim);font-size:12.5px;font-weight:500}
+.ghostList .num{font-size:15px}
+.ghostsNow{margin-top:20px;padding-top:16px;border-top:1px solid var(--rule)}
+
+/* First-run "How to play" card over the stage (the pause veil's look, the pre-game sheet's controls table). */
+.tut{cursor:pointer;z-index:5}
+.tut .rc{cursor:default}
+.tut .rc>small{font-size:12.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#b9bfe6}
+.tut .rc h3{margin:6px 0 8px}
+.tut .rc p{margin:0 0 4px;color:#d6daf5;font-size:15px}
+.tut .keys{width:100%;margin:12px 0 18px;border-top:1px solid rgba(255,255,255,.14);text-align:left}
+.tut .keys div{border-bottom:1px solid rgba(255,255,255,.14);color:#d6daf5;gap:14px}
+.tut .keys span{text-align:right}
+#ov .tut kbd{margin:0;background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.2);border-bottom-width:2px;font-size:13px;white-space:nowrap}
+.tut .btn{width:100%;justify-content:center}
+.tut .tutHint{margin-top:10px;color:#8f96c4;font-size:12.5px}
+
+/* /admin (operators only): the site's panels, tables and buttons, laid out for data. */
+.adminGrid{align-items:start}
+.adminTable{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.admin td,.admin th{padding:10px 10px;font-size:14px;vertical-align:top}
+.admin td:first-child,.admin th:first-child{width:auto}
+.admin td .num{font-size:15px}
+.admin small.sub{display:block;color:var(--dim);font-size:12.5px;font-weight:500;margin-top:2px}
+.admin .nowrap{white-space:nowrap}
+.admin .decide{display:flex;gap:6px;align-items:center;min-width:300px}
+.admin .note-in{flex:1;min-width:90px;font:inherit;font-size:13.5px;padding:8px 10px;border-radius:10px;border:1px solid var(--rule);background:var(--deep);color:var(--ink);outline:none}
+.admin .note-in:focus{border-color:var(--ink)}
+.admin .kv .kvv{color:var(--ink);font-weight:600;text-align:right;overflow-wrap:anywhere;margin-left:14px}
+.adminActs{display:flex;gap:8px;flex-wrap:wrap}
+.admin .dh span small.sub{overflow-wrap:anywhere}
+.admin .runsTable table{min-width:820px}
